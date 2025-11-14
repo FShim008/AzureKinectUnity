@@ -8,7 +8,7 @@ public class KinectResourceManager : MonoBehaviour
     private Queue<System.IDisposable> pendingDisposals = new Queue<System.IDisposable>();
     private readonly object disposalLock = new object();
 
-    void Awake()
+    void OnEnable()
     {
         if (instance == null)
         {
@@ -17,7 +17,7 @@ public class KinectResourceManager : MonoBehaviour
         }
         else
         {
-            Destroy(gameObject);
+            Destroy(this);
         }
     }
 

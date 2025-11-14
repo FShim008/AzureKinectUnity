@@ -6,6 +6,17 @@ A comprehensive Unity toolkit for Azure Kinect featuring real-time data capture,
 [![Azure Kinect](https://img.shields.io/badge/Azure%20Kinect-DK-green)](https://azure.microsoft.com/en-us/products/kinect-dk/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+---
+
+## 📚 Table of Contents
+- [Features](#-features)
+- [Prerequisites](#-prerequisites)
+- [Setup](#-setup)
+- [Verification](#-step-6-verify-installation)
+- [Future Work](#-future-work)
+
+---
+
 ## 🎯 Features
 
 - **✨ Real-time Data Capture**: Direct Azure Kinect integration with Unity
@@ -22,6 +33,7 @@ A comprehensive Unity toolkit for Azure Kinect featuring real-time data capture,
 ### Hardware Requirements
 
 - **Azure Kinect DK** device
+- (Optional) **Orbbec Femto Bolt** device in lieu of Azure Kinect
 - **USB 3.0** port (blue USB port)
 - **Windows 10/11** (64-bit)
 - **GPU** (recommended for body tracking, optional for CPU mode)
@@ -80,7 +92,28 @@ C:\Program Files\Azure Kinect Body Tracking SDK\tools\k4abt_simple_3d_viewer.exe
 - **Scripting Backend:** Mono (recommended) or IL2CPP
 - **Architecture:** x86_64
 
-#### 4. Optional: CUDA Toolkit (for GPU Body Tracking)
+#### 4. Optional: Orbbec Femto Bolt K4A-Wrapper (in lieu of Azure Kinect)
+
+**Version:** 2.0.11 or later
+
+**Download:** [Orbbec SDK K4A Wrapper](https://github.com/orbbec/OrbbecSDK-K4A-Wrapper/releases/)
+
+**Installation Steps:**
+1. Download `OrbbecSDK_K4A_Wrapper_v2.0.11_windows_202510221441.zip` and extract it to some `wrapper-dir` folder 
+2. Follow the Section-2 instructions here `https://www.orbbec.com/documentation/access-akdk-application-software-with-femto-bolt/` to copy files from the Wrapper to the default Azure Kinect SDK path: `C:\Program Files\Azure Kinect SDK v1.4.1\`
+3. Header files - copy both the folders `k4a` and `k4arecord` from `wrapper-dir\include\` to `C:\Program Files\Azure Kinect SDK v1.4.1\sdk\include`
+4. Library files - copy `k4a.lib` and `k4arecord.lib` from `wrapper-dir\lib\` to `C:\Program Files\Azure Kinect SDK v1.4.1\sdk\windows-desktop\amd64\release\lib\`
+5. DLL files & Extensions folder - copy the files `k4a.dll`, `k4arecord.dll`, `depthengine_2_0.dll`, `OrbbecSDK.dll` and the `extensions\` folder from `wrapper-dir\bin\` to two locations - `C:\Program Files\Azure Kinect SDK v1.4.1\sdk\windows-desktop\amd64\release\bin\` & `C:\Program Files\Azure Kinect SDK v1.4.1\tools`
+
+
+
+**Verify Installation:**
+```bash
+# Check if Body Tracking Viewer works
+C:\Program Files\Azure Kinect Body Tracking SDK\tools\k4abt_simple_3d_viewer.exe
+```
+
+#### 5. Optional: CUDA Toolkit (for GPU Body Tracking)
 
 **Version:** CUDA 11.0 or later
 
@@ -105,7 +138,7 @@ cd azure-kinect-unity
 2. Click **Add** → Select project folder
 3. Open project with Unity 2021.3+ LTS
 
-### Step 3: Copy Azure Kinect DLLs to Unity
+### Step 3: Copy Azure Kinect DLLs (or the overwritten Orbbec SDK Wrapper DLLs) to Unity
 
 #### Create Plugin Folders
 
@@ -141,6 +174,8 @@ Files:
   - k4a.dll
   - k4arecord.dll
   - depthengine_2_0.dll
+  - (optional for using Orbbec Femto Bolt K4A-Wrapper) OrbbecSDK.dll
+  - (optional for using Orbbec Femto Bolt K4A-Wrapper) (folder) extensions/
 ```
 
 **From Body Tracking SDK:**
@@ -211,5 +246,12 @@ For each **Managed DLL** in `Assets/Plugins/`:
 - Add SMPL and RocketBox avatar retargeting
 - Integrate Multiple Azure Kinects
 - Perform Skeleton-based Calibration of multiple Kinects
+
+---
+
+## 👤 Author
+**Kevin Desai**  
+Assistant Professor of Instruction, UTSA CS Department  
+📧 [kevin.desai@utsa.edu](mailto:kevin.desai@utsa.edu)
 
 ---

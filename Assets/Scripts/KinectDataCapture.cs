@@ -8,7 +8,7 @@ public class KinectDataCapture : MonoBehaviour
     [Header("Device Settings")]
     [SerializeField] private int deviceIndex = 0;
     [SerializeField] private DepthMode depthMode = DepthMode.NFOV_Unbinned;
-    [SerializeField] private ColorResolution colorResolution = ColorResolution.R720p; // CHANGED: Lower resolution
+    [SerializeField] private ColorResolution colorResolution = ColorResolution.R720p;
     [SerializeField] private FPS frameRate = FPS.FPS30;
 
     public event Action<KinectFrameData> OnFrameReceived;
@@ -29,7 +29,7 @@ public class KinectDataCapture : MonoBehaviour
     public Transformation GetTransformation() => transformation;
     public Device GetDevice() => kinect;
 
-    void Awake()
+    void Start()
     {
         InitializeKinect();
     }
@@ -38,7 +38,9 @@ public class KinectDataCapture : MonoBehaviour
     {
         try
         {
+            Debug.Log("[KinectDataCapture] Initializing device...");
             kinect = Device.Open(deviceIndex);
+            Debug.Log("[KinectDataCapture] Device opened successfully.");
 
             var config = new DeviceConfiguration
             {
@@ -49,7 +51,10 @@ public class KinectDataCapture : MonoBehaviour
                 CameraFPS = frameRate
             };
 
+            Debug.Log("[KinectDataCapture] Starting cameras..."); 
             kinect.StartCameras(config);
+            Debug.Log("[KinectDataCapture] Cameras started successfully."); 
+            
             calibration = kinect.GetCalibration(depthMode, colorResolution);
             transformation = calibration.CreateTransformation();
 

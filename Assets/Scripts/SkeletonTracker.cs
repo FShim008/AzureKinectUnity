@@ -205,8 +205,9 @@ public class SkeletonTracker : MonoBehaviour
     {
         if (latestSkeletons == null)
             return null;
-        return latestSkeletons;
+        return new List<SkeletonData>(latestSkeletons);
     }
+
 
     private Image CreateImageFromBytes(ImageFormat format, int width, int height, int stride, byte[] data)
     {
