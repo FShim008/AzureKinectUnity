@@ -1,245 +1,162 @@
-﻿using UnityEngine;
-using Microsoft.Azure.Kinect.Sensor;
-using Microsoft.Azure.Kinect.BodyTracking;
+using K4AdotNet.BodyTracking;
 using System;
-using System.Collections.Generic;
+using System.Collections;
 using System.Threading.Tasks;
+using UnityEngine;
+
+public class SkeletonEventArgs : EventArgs
+{
+    public SkeletonData? Skeleton { get; }
+    public string DeviceSerialNumber { get; }
+    public static readonly SkeletonEventArgs Empty = new(null, string.Empty);
+    public SkeletonEventArgs(SkeletonData? skeleton, string serial)
+    {
+        Skeleton = skeleton;
+        DeviceSerialNumber = serial;
+    }
+}
+
+public static class GlobalBodyTracking
+{
+    public static bool Initialized = false;
+    public static bool Initializing = false;
+}
 
 public class SkeletonTracker : MonoBehaviour
 {
-    [SerializeField] private KinectDataCapture dataCapture;
+    private Tracker _tracker;
+    private KinectDevice _deviceComponent;
+    public event EventHandler<SkeletonEventArgs> OnSkeletonsProcessed;
+    public bool IsAvailable { get; private set; }
 
-    [Header("Tracking Settings")]
-    [SerializeField] private int maxBodies = 4;
-    [SerializeField] private SensorOrientation sensorOrientation = SensorOrientation.Default;
-    [SerializeField] private TrackerProcessingMode processingMode = TrackerProcessingMode.Gpu; // Changed to CPU by default
-    [SerializeField] private int timeoutMs = 100; // Timeout for PopResult
-
-    [Header("Debug")]
-    [SerializeField] private bool verboseLogging = false;
-
-    public event Action<List<SkeletonData>> OnSkeletonsUpdated;
-    public event Action<Image> OnBodyIndexMapUpdated;
-    public event Action<Frame, Image, List<SkeletonData>> OnPersonDataAvailable;
-
-    private Tracker bodyTracker;
-    private bool isTracking = false;
-    private int frameCount = 0;
-    private int errorCount = 0;
-
-    private Frame latestFrame;
-    private Image latestBodyIndexMap;
-    private List<SkeletonData> latestSkeletons;
-
-    void Start()
+    private IEnumerator Start()
     {
-        if (dataCapture != null)
+        // 1. Store the Device Component reference
+        _deviceComponent = GetComponent<KinectDevice>();
+        if (_deviceComponent == null)
         {
-            InitializeBodyTracking();
-            if (isTracking)
+            Debug.LogError($"[{gameObject.name}] Missing required KinectDevice component.");
+            yield break;
+        }
+
+        // 2. GLOBAL: Initialize K4ABT Runtime (once per application)
+        if (!GlobalBodyTracking.Initialized && !GlobalBodyTracking.Initializing)
+        {
+            GlobalBodyTracking.Initializing = true;
+            Debug.Log("Initializing Body Tracking Runtime");
+            var task = Task.Run(() =>
             {
-                dataCapture.OnFrameReceived += ProcessFrameForTracking;
+                bool initialized = K4AdotNet.Sdk.TryInitializeBodyTrackingRuntime(TrackerProcessingMode.Gpu, out var message);
+                return Tuple.Create(initialized, message);
+            });
+            yield return new WaitUntil(() => task.IsCompleted);
+
+            var result = task.Result;
+            GlobalBodyTracking.Initialized = result.Item1;
+            GlobalBodyTracking.Initializing = false;
+            if (!GlobalBodyTracking.Initialized)
+            {
+                Debug.LogError($"Cannot initialize body tracking: {result.Item2}");
+                yield break;
             }
+        }
+        yield return new WaitUntil(() => GlobalBodyTracking.Initialized);
+
+        // 3. WAIT: Ensure the Device is open and ready to provide calibration
+        yield return new WaitUntil(() => _deviceComponent.IsInitialized);
+        if (_deviceComponent.IsInitialized)
+        {
+            var calibration = _deviceComponent.calibration;
+            var config = TrackerConfiguration.Default;
+            config.ProcessingMode = TrackerProcessingMode.Gpu;
+            config.ModelPath = K4AdotNet.Sdk.BODY_TRACKING_DNN_MODEL_FILE_NAME;
+            _tracker = new Tracker(in calibration, config);
+            
+            // 4. SUBSCRIBE to the device's capture event
+            _deviceComponent.OnCaptureReady += EnqueueCaptureForProcessing;
+            IsAvailable = true;
+            //Debug.Log($"[{gameObject.name}] Tracker initialized and subscribed to capture events.");
         }
     }
 
-    void InitializeBodyTracking()
+    private void OnDestroy()
     {
-        try
+        if (_deviceComponent != null)
+            _deviceComponent.OnCaptureReady -= EnqueueCaptureForProcessing;
+        _tracker?.Dispose();
+    }
+
+    private void EnqueueCaptureForProcessing(object sender, CaptureEventArgs e)
+    {
+        if (IsAvailable && e.Capture != null)
         {
-            Debug.Log($"[SkeletonTracker] Initializing body tracking in {processingMode} mode...");
-
-            var trackerConfig = new TrackerConfiguration
-            {
-                SensorOrientation = sensorOrientation,
-                ProcessingMode = processingMode
-            };
-
-            bodyTracker = Tracker.Create(dataCapture.GetCalibration(), trackerConfig);
-            isTracking = true;
-
-            Debug.Log($"[SkeletonTracker] ✓ Body tracking initialized successfully in {processingMode} mode");
+            using var capture = e.Capture;
+            if (!(capture.DepthImage is null))
+                _tracker.TryEnqueueCapture(capture);
         }
-        catch (Exception e)
-        {
-            Debug.LogError($"[SkeletonTracker] Failed to initialize body tracking: {e.Message}\n" +
-                $"Possible issues:\n" +
-                $"1. Body Tracking SDK not installed\n" +
-                $"2. Missing dnn_model_2_0_op11.onnx file\n" +
-                $"3. Missing k4abt.dll or onnxruntime.dll\n" +
-                $"4. If using GPU mode: Missing CUDA/cuDNN DLLs\n" +
-                $"Try setting Processing Mode to 'Cpu' in Inspector");
+    }
 
-            // Try CPU fallback if GPU failed
-            if (processingMode == TrackerProcessingMode.Gpu)
+    private void Update()
+    {
+        if (!IsAvailable || _tracker == null) return;
+
+        if (_tracker.QueueSize > 0)
+        {
+            if (_tracker.TryPopResult(out var bodyFrame))
             {
-                Debug.Log("[SkeletonTracker] Attempting CPU fallback...");
-                try
+                //Debug.Log($"[{gameObject.name}] LOG 3: Tracker result popped (Queue Size: {_tracker.QueueSize})");
+                using (bodyFrame)
                 {
-                    var cpuConfig = new TrackerConfiguration
+                    if (bodyFrame.BodyCount > 0)
                     {
-                        SensorOrientation = sensorOrientation,
-                        ProcessingMode = TrackerProcessingMode.Cpu
-                    };
-
-                    bodyTracker = Tracker.Create(dataCapture.GetCalibration(), cpuConfig);
-                    isTracking = true;
-                    processingMode = TrackerProcessingMode.Cpu;
-
-                    Debug.Log("[SkeletonTracker] ✓ CPU fallback successful");
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"[SkeletonTracker] CPU fallback also failed: {ex.Message}");
+                        //Debug.Log($"[{gameObject.name}] LOG 4: Found body count: {bodyFrame.BodyCount}");
+                        SkeletonData skeletonData = ConvertBodyFrameToSkeletonData(bodyFrame);
+                        OnSkeletonsProcessed?.Invoke(this, new SkeletonEventArgs(skeletonData, _deviceComponent.SerialNumber));
+                    }
+                    else
+                        OnSkeletonsProcessed?.Invoke(this, SkeletonEventArgs.Empty);
                 }
             }
         }
     }
 
-    async void ProcessFrameForTracking(KinectFrameData frameData)
+    private SkeletonData ConvertBodyFrameToSkeletonData(BodyFrame bodyFrame)
     {
-        if (!isTracking || bodyTracker == null || frameData.Capture == null)
-            return;
-
-        try
+        var skeletons = new Skeleton[bodyFrame.BodyCount];
+        for (int bodyIndex = 0; bodyIndex < bodyFrame.BodyCount; bodyIndex++)
         {
-            frameCount++;
-
-            // Enqueue directly
-            bodyTracker.EnqueueCapture(frameData.Capture.Reference());
-
-            if (verboseLogging && frameCount % 100 == 0)
-                Debug.Log($"[SkeletonTracker] Enqueued frame {frameCount}");
-
-            Frame frame = null;
-            try
+            bodyFrame.GetBodySkeleton(bodyIndex, out var k4aSkeleton);
+            uint bid = (uint)bodyFrame.GetBodyId(bodyIndex).Value;
+            var joints = new JointData[32];
+            var rootJoint = k4aSkeleton[(int)JointType.SpineNavel];
+            var positionMm = rootJoint.PositionMm;
+            
+            for (int j = 0; j < 32; j++)
             {
-                frame = await Task.Run(() => bodyTracker.PopResult(TimeSpan.FromMilliseconds(timeoutMs)));
-            }
-            catch (TimeoutException)
-            {
-                if (verboseLogging)
-                    Debug.Log($"[SkeletonTracker] PopResult timeout (frame {frameCount})");
-                return;
-            }
-
-            if (frame != null)
-            {
-                using (frame)
+                var k4aJoint = k4aSkeleton[j];
+                Vector3 position = new Vector3(k4aJoint.PositionMm.X, -k4aJoint.PositionMm.Y, k4aJoint.PositionMm.Z) * 0.001f;
+                Quaternion orientation = new Quaternion(
+                    k4aJoint.Orientation.X,
+                    -k4aJoint.Orientation.Y,
+                    -k4aJoint.Orientation.Z,
+                    k4aJoint.Orientation.W
+                );
+                joints[j] = new JointData
                 {
-                    var skeletons = ExtractSkeletons(frame);
-                    OnSkeletonsUpdated?.Invoke(skeletons);
-
-                    var bodyIndexMap = frame.BodyIndexMap;
-                    if (bodyIndexMap != null)
-                        OnBodyIndexMapUpdated?.Invoke(bodyIndexMap.Reference());
-
-                    latestFrame = frame.Reference();
-                    latestBodyIndexMap = bodyIndexMap?.Reference();
-                    latestSkeletons = skeletons;
-
-                    OnPersonDataAvailable?.Invoke(latestFrame, latestBodyIndexMap, latestSkeletons);
-                }
-                errorCount = 0;
-            }
-        }
-        catch (Exception e)
-        {
-            errorCount++;
-            Debug.LogError($"[SkeletonTracker] Skeleton tracking error #{errorCount}: {e.Message}");
-        }
-    }
-
-    List<SkeletonData> ExtractSkeletons(Frame frame)
-    {
-        var skeletons = new List<SkeletonData>();
-
-        if (frame == null || frame.NumberOfBodies == 0)
-            return skeletons;
-
-        for (uint i = 0; i < frame.NumberOfBodies && i < maxBodies; i++)
-        {
-            Skeleton skeleton = frame.GetBodySkeleton(i);
-            uint bodyId = frame.GetBodyId(i);
-
-            var skeletonData = new SkeletonData
-            {
-                BodyId = bodyId,
-                Joints = new Dictionary<JointId, JointData>()
-            };
-
-            for (int j = 0; j < (int)JointId.Count; j++)
-            {
-                // Explicitly use BodyTracking.Joint to avoid ambiguity
-                Microsoft.Azure.Kinect.BodyTracking.Joint joint = skeleton.GetJoint(j);
-
-                skeletonData.Joints[(JointId)j] = new JointData
-                {
-                    Position = new UnityEngine.Vector3(
-                        joint.Position.X / 1000f,
-                        -joint.Position.Y / 1000f,
-                        joint.Position.Z / 1000f
-                    ),
-                    Orientation = new UnityEngine.Quaternion(
-                        joint.Quaternion.X,
-                        -joint.Quaternion.Y,
-                        joint.Quaternion.Z,
-                        joint.Quaternion.W
-                    ),
-                    Confidence = joint.ConfidenceLevel
+                    Position = position,
+                    Orientation = orientation,
+                    ConfidenceLevel = k4aJoint.ConfidenceLevel
                 };
             }
-
-            skeletons.Add(skeletonData);
+            
+            skeletons[bodyIndex] = new Skeleton
+            {
+                BodyId = bid,
+                Joints = joints,
+                Position = new Vector3(positionMm.X, -positionMm.Y, positionMm.Z) * 0.001f,
+                Orientation = Quaternion.identity
+            };
         }
-
-        return skeletons;
+        return new SkeletonData { Skeletons = skeletons };
     }
-
-    public void StopTracking()
-    {
-        isTracking = false;
-    }
-
-    public List<SkeletonData> GetLatestSkeletons()
-    {
-        if (latestSkeletons == null)
-            return null;
-        return new List<SkeletonData>(latestSkeletons);
-    }
-
-
-    private Image CreateImageFromBytes(ImageFormat format, int width, int height, int stride, byte[] data)
-    {
-        Image image = new Image(format, width, height, stride);
-        data.CopyTo(image.Memory.Span);
-        return image;
-    }
-
-    void OnDestroy()
-    {
-        isTracking = false;
-
-        if (dataCapture != null)
-        {
-            dataCapture.OnFrameReceived -= ProcessFrameForTracking;
-        }
-
-        bodyTracker?.Dispose();
-
-        Debug.Log($"[SkeletonTracker] Shutdown. Processed {frameCount} frames with {errorCount} errors");
-    }
-}
-
-public class SkeletonData
-{
-    public uint BodyId;
-    public Dictionary<JointId, JointData> Joints;
-}
-
-public class JointData
-{
-    public UnityEngine.Vector3 Position;
-    public UnityEngine.Quaternion Orientation;
-    public JointConfidenceLevel Confidence;
 }
