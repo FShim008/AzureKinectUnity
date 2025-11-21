@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 8842969769447751739}
   - component: {fileID: 4555881541670112348}
   m_Layer: 0
-  m_Name: KinectPipelinePrefab
+  m_Name: KinectPrefab
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -59,6 +59,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4c40b7004278ffb4dba5038eb93f31af, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SkeletonTracker
+  _deviceComponent: {fileID: 4086910274547175508}
 --- !u!114 &4555881541670112348
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -71,3 +72,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d71d0abeae053ab4cb334e1730e14a6b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::K4AdotNet.Samples.Unity.SkeletonRenderer
+  _tracker: {fileID: 8842969769447751739}

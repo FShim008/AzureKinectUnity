@@ -1,6 +1,7 @@
 using K4AdotNet;
 using K4AdotNet.Sensor;
 using System;
+using System.IO;
 using UnityEngine;
 
 public class CaptureEventArgs : EventArgs
@@ -12,11 +13,12 @@ public class CaptureEventArgs : EventArgs
 public class KinectDevice : MonoBehaviour
 {
     public int DeviceIndex = 0;
+    public Matrix4x4 DeviceTransform { get; private set; } = Matrix4x4.identity;
     public DeviceConfiguration Configuration { get; private set; }
     public Calibration calibration;
     public string SerialNumber => _device?.SerialNumber ?? string.Empty;
     public bool IsInitialized { get; private set; }
-    
+
     private Device _device;
     private const DepthMode TrackingDepthMode = DepthMode.NarrowViewUnbinned;
     private const ColorResolution TrackingColorResolution = ColorResolution.R720p;
@@ -40,6 +42,7 @@ public class KinectDevice : MonoBehaviour
             _device.StartCameras(Configuration);
             IsInitialized = true;
             Debug.Log($"[{gameObject.name}] Device {SerialNumber} opened and cameras started successfully.");
+            LoadTransformationMatrix();
         }
         else
         {
@@ -48,13 +51,33 @@ public class KinectDevice : MonoBehaviour
         }
     }
 
+    private void LoadTransformationMatrix()
+    {
+        int cameraIndex = DeviceIndex + 1;
+        if (cameraIndex == 1)
+        {
+            DeviceTransform = Matrix4x4.identity;
+            Debug.Log($"[{gameObject.name}] Device {DeviceIndex} (Camera 1) uses Identity transform.");
+            return;
+        }
+
+        string fileName = $"calib-{cameraIndex}-1.txt";
+        string expectedFilePath = Path.Combine(Application.dataPath, "CalibrationFiles", fileName);
+        Debug.Log($"Attempting to load calibration for Device {DeviceIndex} from: {expectedFilePath}");
+        
+        DeviceTransform = CalibrationUtility.LoadMatrixFromFile(fileName);
+        if (DeviceTransform != Matrix4x4.identity)
+            Debug.Log($"[{gameObject.name}] Loaded custom transformation matrix. Camera {cameraIndex} is now calibrated to Camera 1.");
+        else
+            Debug.LogWarning($"[{gameObject.name}] Could not load calibration file: {fileName}. Device will use Identity Matrix (uncalibrated).");
+    }
+
     private void Update()
     {
-        if (!IsInitialized || _device == null) return;
-
+        if (!IsInitialized || _device == null) 
+            return;
         if (_device.TryGetCapture(out var capture))
         {
-            //Debug.Log($"[{gameObject.name}] LOG 1 & 2: Got capture from {SerialNumber}");
             using (capture)
                 OnCaptureReady?.Invoke(this, new CaptureEventArgs(capture.DuplicateReference()));
         }

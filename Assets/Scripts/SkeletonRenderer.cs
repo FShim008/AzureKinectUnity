@@ -3,9 +3,12 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 
 public class SkeletonRenderer : MonoBehaviour
 {
+    [SerializeField] private SkeletonTracker _tracker;
+
     private void Awake()
     {
         _root = new GameObject();
@@ -19,10 +22,41 @@ public class SkeletonRenderer : MonoBehaviour
         CreateHead();
     }
 
+    private void Start()
+    {
+        _tracker = GetComponent<SkeletonTracker>();
+        if (_tracker == null)
+        {
+            Debug.LogError($"[{gameObject.name}] Missing required {nameof(SkeletonTracker)} component. Cannot render skeleton.");
+            return;
+        }
+        _tracker.OnSkeletonsProcessed += SkeletonTracker_SkeletonUpdated;
+        Debug.Log($"[{gameObject.name}] Renderer successfully subscribed to Tracker events.");
+    }
+
+    private void OnDestroy()
+    {
+        if (_tracker != null)
+            _tracker.OnSkeletonsProcessed -= SkeletonTracker_SkeletonUpdated;
+    }
+
     #region Render objects
 
+    private struct JointVisual
+    {
+        public Transform Transform;
+        public Renderer Renderer;
+    }
+    [Header("Joint Confidence Colors")]
+    public Color TrackedHighColor = Color.green;
+    public Color TrackedMediumColor = Color.yellow;
+    public Color TrackedLowColor = Color.red;
+    public Color UntrackedColor = Color.gray;
+
+    private IReadOnlyDictionary<JointType, JointVisual> _joints;
+    private static IEnumerable<JointType> AllJointTypes => typeof(JointType).GetEnumValues().Cast<JointType>();
+
     private GameObject _root;
-    private IReadOnlyDictionary<JointType, Transform> _joints;
     private IReadOnlyCollection<Bone> _bones;
     private Transform _head;
 
@@ -50,18 +84,29 @@ public class SkeletonRenderer : MonoBehaviour
 
     private void CreateJoints()
     {
-        _joints = JointTypes.All
-            .ToDictionary(
-                jt => jt,
-                jt =>
+        var jointsDict = AllJointTypes
+        .ToDictionary(
+            jt => jt,
+            jt =>
+            {
+                var joint = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                Destroy(joint.GetComponent<Collider>()); // Remove physics collider
+
+                joint.name = jt.ToString();
+                joint.transform.parent = _root.transform;
+
+                // Initial scale is temporary, but we set it here.
+                joint.transform.localScale = 0.075f * Vector3.one;
+
+                // NEW: Store both the Transform and the Renderer
+                return new JointVisual
                 {
-                    var joint = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    joint.name = jt.ToString();
-                    joint.transform.parent = _root.transform;
-                    joint.transform.localScale = 0.075f * Vector3.one;
-                    return joint.transform;
-                });
-        SetJointColor(Color.green, typeof(JointType).GetEnumValues().Cast<JointType>().ToArray());
+                    Transform = joint.transform,
+                    Renderer = joint.GetComponent<Renderer>()
+                };
+            });
+        _joints = jointsDict;
+        SetJointColor(TrackedHighColor, AllJointTypes.ToArray());
         SetJointScale(0.05f, JointType.Neck, JointType.Head, JointType.ClavicleLeft, JointType.ClavicleRight, JointType.EarLeft, JointType.EarRight);
         SetJointScale(0.033f, JointType.EyeLeft, JointType.EyeRight, JointType.Nose);
         SetJointColor(Color.cyan, JointType.EyeLeft, JointType.EyeRight);
@@ -72,13 +117,22 @@ public class SkeletonRenderer : MonoBehaviour
     private void SetJointScale(float scale, params JointType[] jointTypes)
     {
         foreach (var jt in jointTypes)
-            _joints[jt].localScale = scale * Vector3.one;
+        {
+            if (_joints.TryGetValue(jt, out JointVisual visual))
+                _joints[jt].Transform.localScale = scale * Vector3.one;
+        }
     }
 
     private void SetJointColor(Color color, params JointType[] jointTypes)
     {
         foreach (var jt in jointTypes)
-            _joints[jt].GetComponent<Renderer>().material.color = color;
+        {
+            if (_joints.TryGetValue(jt, out JointVisual visual))
+            {
+                if(visual.Renderer != null)
+                    visual.Renderer.material.color = color;
+            }
+        }
     }
 
     private void CreateBones()
@@ -142,21 +196,37 @@ public class SkeletonRenderer : MonoBehaviour
             HideSkeleton();
             return;
         }
-
         var skeleton = skeletonData.Skeletons[0];
-
+        _root.transform.localPosition = skeleton.Position;
         for (int i = 0; i < 32; i++)
         {
             JointType jt = (JointType)i;
             JointData jointData = skeleton.Joints[i];
-
-            if (_joints.TryGetValue(jt, out Transform jointTransform))
-                jointTransform.localPosition = jointData.Position;
+            if (_joints.TryGetValue(jt, out JointVisual jointVisual))
+            {
+                jointVisual.Transform.localPosition = jointData.Position - skeleton.Position;
+                Color jointColor = UntrackedColor;
+                switch (jointData.ConfidenceLevel)
+                {
+                    case JointConfidenceLevel.High:
+                        jointColor = TrackedHighColor;
+                        break;
+                    case JointConfidenceLevel.Medium:
+                        jointColor = TrackedMediumColor;
+                        break;
+                    case JointConfidenceLevel.Low:
+                        jointColor = TrackedLowColor;
+                        break;
+                    case JointConfidenceLevel.None:
+                    default:
+                        break;
+                }
+                if (jointVisual.Renderer != null)
+                    jointVisual.Renderer.material.color = jointColor;
+            }
         }
-
         foreach (var bone in _bones)
             PositionBone(bone, skeleton);
-
         PositionHead(skeleton);
         _root.SetActive(true);
     }
@@ -167,7 +237,7 @@ public class SkeletonRenderer : MonoBehaviour
         var childJointData = skeleton.Joints[(int)bone.ChildJoint];
         var parentPos = parentJointData.Position;
         var direction = childJointData.Position - parentPos;
-        bone.Transform.localPosition = parentPos;
+        bone.Transform.localPosition = parentPos - skeleton.Position;
         bone.Transform.localScale = new Vector3(1f, direction.magnitude * 0.5f, 1f);
         bone.Transform.localRotation = Quaternion.FromToRotation(Vector3.up, direction);
     }
@@ -179,7 +249,7 @@ public class SkeletonRenderer : MonoBehaviour
         var earPosL = skeleton.Joints[(int)JointType.EarLeft].Position;
         var headCenter = 0.5f * (earPosR + earPosL);
         var d = (earPosR - earPosL).magnitude;
-        _head.localPosition = headCenter;
+        _head.localPosition = headCenter - skeleton.Position;
         _head.localRotation = Quaternion.FromToRotation(Vector3.up, headCenter - headPos);
         _head.localScale = new Vector3(d, 2 * (headCenter - headPos).magnitude, d);
     }

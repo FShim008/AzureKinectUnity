@@ -24,14 +24,13 @@ public static class GlobalBodyTracking
 
 public class SkeletonTracker : MonoBehaviour
 {
+    [SerializeField] private KinectDevice _deviceComponent;
     private Tracker _tracker;
-    private KinectDevice _deviceComponent;
     public event EventHandler<SkeletonEventArgs> OnSkeletonsProcessed;
     public bool IsAvailable { get; private set; }
 
     private IEnumerator Start()
     {
-        // 1. Store the Device Component reference
         _deviceComponent = GetComponent<KinectDevice>();
         if (_deviceComponent == null)
         {
@@ -39,7 +38,6 @@ public class SkeletonTracker : MonoBehaviour
             yield break;
         }
 
-        // 2. GLOBAL: Initialize K4ABT Runtime (once per application)
         if (!GlobalBodyTracking.Initialized && !GlobalBodyTracking.Initializing)
         {
             GlobalBodyTracking.Initializing = true;
@@ -62,7 +60,6 @@ public class SkeletonTracker : MonoBehaviour
         }
         yield return new WaitUntil(() => GlobalBodyTracking.Initialized);
 
-        // 3. WAIT: Ensure the Device is open and ready to provide calibration
         yield return new WaitUntil(() => _deviceComponent.IsInitialized);
         if (_deviceComponent.IsInitialized)
         {
@@ -72,10 +69,9 @@ public class SkeletonTracker : MonoBehaviour
             config.ModelPath = K4AdotNet.Sdk.BODY_TRACKING_DNN_MODEL_FILE_NAME;
             _tracker = new Tracker(in calibration, config);
             
-            // 4. SUBSCRIBE to the device's capture event
             _deviceComponent.OnCaptureReady += EnqueueCaptureForProcessing;
             IsAvailable = true;
-            //Debug.Log($"[{gameObject.name}] Tracker initialized and subscribed to capture events.");
+            Debug.Log($"[{gameObject.name}] Tracker initialized and subscribed to capture events.");
         }
     }
 
@@ -122,6 +118,7 @@ public class SkeletonTracker : MonoBehaviour
 
     private SkeletonData ConvertBodyFrameToSkeletonData(BodyFrame bodyFrame)
     {
+        Matrix4x4 transformMatrix = _deviceComponent.DeviceTransform;
         var skeletons = new Skeleton[bodyFrame.BodyCount];
         for (int bodyIndex = 0; bodyIndex < bodyFrame.BodyCount; bodyIndex++)
         {
@@ -130,7 +127,7 @@ public class SkeletonTracker : MonoBehaviour
             var joints = new JointData[32];
             var rootJoint = k4aSkeleton[(int)JointType.SpineNavel];
             var positionMm = rootJoint.PositionMm;
-            
+
             for (int j = 0; j < 32; j++)
             {
                 var k4aJoint = k4aSkeleton[j];
@@ -141,6 +138,7 @@ public class SkeletonTracker : MonoBehaviour
                     -k4aJoint.Orientation.Z,
                     k4aJoint.Orientation.W
                 );
+                orientation = transformMatrix.rotation * orientation;
                 joints[j] = new JointData
                 {
                     Position = position,
@@ -153,8 +151,8 @@ public class SkeletonTracker : MonoBehaviour
             {
                 BodyId = bid,
                 Joints = joints,
-                Position = new Vector3(positionMm.X, -positionMm.Y, positionMm.Z) * 0.001f,
-                Orientation = Quaternion.identity
+                Position = transformMatrix.MultiplyPoint(new Vector3(positionMm.X, -positionMm.Y, positionMm.Z) * 0.001f),
+                Orientation = transformMatrix.rotation * new Quaternion(rootJoint.Orientation.X, -rootJoint.Orientation.Y, -rootJoint.Orientation.Z, rootJoint.Orientation.W)
             };
         }
         return new SkeletonData { Skeletons = skeletons };
