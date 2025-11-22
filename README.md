@@ -1,6 +1,6 @@
 # Azure Kinect Unity Integration
 
-A comprehensive Unity toolkit for Azure Kinect featuring real-time data capture, 3D reconstruction, skeleton tracking, and avatar animation.
+A comprehensive Unity toolkit for Azure Kinect featuring real-time data capture, 3D reconstruction, skeleton tracking, avatar animation, and an automated multi-camera calibration system.
 
 [![Unity Version](https://img.shields.io/badge/Unity-6.2%2B-blue)](https://unity.com/)
 [![Azure Kinect](https://img.shields.io/badge/Azure%20Kinect-DK-green)](https://azure.microsoft.com/en-us/products/kinect-dk/)
@@ -12,18 +12,20 @@ A comprehensive Unity toolkit for Azure Kinect featuring real-time data capture,
 - [Features](#-features)
 - [Prerequisites](#-prerequisites)
 - [Setup](#-setup)
-- [Verification](#-step-6-verify-installation)
+- [Multi-Camera Calibration](#-multi-camera-calibration-setup)
 - [Future Work](#-future-work)
 
 ---
 
 ## 🎯 Features
 
-- **✨ Real-time Data Capture**: Direct Azure Kinect integration with Unity
-- **☁️ 3D Point Cloud**: Full scene reconstruction with color mapping
-- **🦴 Skeleton Tracking**: Multi-person body tracking with 32 joints per person
-- **🎨 Skeleton Visualization**: Skeleton visualization with confidence levels
-- **👤 Person Segmentation**: Individual point clouds and meshes per tracked person
+- **✨ K4AdotNet Integration**: Leverages the official, high-performance .NET Standard 2.1 wrapper for Azure Kinect.
+- **🔗 Multi-Device Support**: Capable of initializing and running multiple Azure Kinect (or Orbbec Femto Bolt) devices simultaneously.
+- **📐 Automated Multi-Camera Calibration**: Skeleton-based Procrustes analysis and transitive chaining to align all cameras to a single coordinate system (Camera 1).
+- **☁️ 3D Point Cloud**: Full scene reconstruction with color mapping.
+- **🦴 Skeleton Tracking**: Multi-person body tracking with 32 joints per person.
+- **🎨 Skeleton Visualization**: Skeleton visualization with confidence levels.
+- **👤 Person Segmentation**: Individual point clouds and meshes per tracked person.
 - **📊 Performance Monitoring**: Built-in FPS and memory tracking
 
 ---
@@ -40,6 +42,8 @@ A comprehensive Unity toolkit for Azure Kinect featuring real-time data capture,
   - NVIDIA GPU with CUDA support (for GPU body tracking)
   - 8GB RAM minimum, 16GB recommended
   - Intel Core i5 or better
+
+--- 
 
 ### Software Requirements
 
@@ -85,14 +89,24 @@ C:\Program Files\Azure Kinect Body Tracking SDK\tools\k4abt_simple_3d_viewer.exe
 
 **Required Modules:**
 - Windows Build Support (IL2CPP)
-- Visual Studio 2022
+- Visual Studio 2026
 
 **Project Settings Required:**
 - **Api Compatibility Level:** .NET Standard 2.1 or .NET 4.x
 - **Scripting Backend:** Mono (recommended) or IL2CPP
 - **Architecture:** x86_64
 
-#### 4. Optional: Orbbec Femto Bolt K4A-Wrapper (in lieu of Azure Kinect)
+
+#### 4.  Other Libraries
+
+**K4AdotNet v1.4.17 or later:** [K4AdotNet NuGet]
+(https://www.nuget.org/packages/K4AdotNet) - Download the zip and extract it in any folder.
+
+**MathNet.Numerics v5.0.0 or later:** [MathNet.Numerics NuGet]
+(https://www.nuget.org/packages/MathNet.Numerics) - Download the zip and extract it in any folder.
+
+
+#### 5. Optional: Orbbec Femto Bolt K4A-Wrapper (in lieu of Azure Kinect)
 
 **Version:** 2.0.11 or later
 
@@ -106,14 +120,13 @@ C:\Program Files\Azure Kinect Body Tracking SDK\tools\k4abt_simple_3d_viewer.exe
 5. DLL files & Extensions folder - copy the files `k4a.dll`, `k4arecord.dll`, `depthengine_2_0.dll`, `OrbbecSDK.dll` and the `extensions\` folder from `wrapper-dir\bin\` to two locations - `C:\Program Files\Azure Kinect SDK v1.4.1\sdk\windows-desktop\amd64\release\bin\` & `C:\Program Files\Azure Kinect SDK v1.4.1\tools`
 
 
-
 **Verify Installation:**
 ```bash
 # Check if Body Tracking Viewer works
 C:\Program Files\Azure Kinect Body Tracking SDK\tools\k4abt_simple_3d_viewer.exe
 ```
 
-#### 5. Optional: CUDA Toolkit (for GPU Body Tracking)
+#### 6. Optional: CUDA Toolkit (for GPU Body Tracking)
 
 **Version:** CUDA 11.0 or later
 
@@ -138,34 +151,22 @@ cd azure-kinect-unity
 2. Click **Add** → Select project folder
 3. Open project with Unity 2021.3+ LTS
 
-### Step 3: Copy Azure Kinect DLLs (or the overwritten Orbbec SDK Wrapper DLLs) to Unity
+### Step 3: Copy Azure Kinect DLLs (or the overwritten Orbbec SDK Wrapper DLLs) + K4AdotNet + Math.Net.Numerics to Unity
 
 #### Create Plugin Folders
 
 ```
 Assets/
 └── Plugins/
-    ├── x86_64/          # Native DLLs
-    └── (root)           # Managed DLLs
 ```
 
-#### Copy Managed DLLs to `Assets/Plugins/`
+#### Copy DLLs to `Assets/Plugins/`
 
-**From Sensor SDK:**
-```
-Source: C:\Program Files\Azure Kinect SDK v1.4.1\sdk\netstandard2.0\release\
-Files:
-  - Microsoft.Azure.Kinect.Sensor.dll
-```
+**From the extracted K4AdotNet:**
+```K4AdotNet.dll```
 
-**From Body Tracking SDK:**
-```
-Source: C:\Program Files\Azure Kinect Body Tracking SDK\sdk\netstandard2.0\release\
-Files:
-  - Microsoft.Azure.Kinect.BodyTracking.dll
-```
-
-#### Copy Native DLLs to `Assets/Plugins/x86_64/`
+**From the extracted MathNet.Numerics:**
+```MathNet.Numerics.dll```
 
 **From Sensor SDK:**
 ```
@@ -184,7 +185,7 @@ Source: C:\Program Files\Azure Kinect Body Tracking SDK\sdk\windows-desktop\amd6
 Files:
   - k4abt.dll
   - onnxruntime.dll
-  - dnn_model_2_0_op11.onnx  (AI model - 159MB)
+  - dnn_model_2_0_op11.onnx
 ```
 
 **Optional (for GPU tracking):**
@@ -198,19 +199,13 @@ Files:
 
 ### Step 4: Configure DLL Import Settings in Unity
 
-For each **Native DLL** in `Assets/Plugins/x86_64/`:
+For each **DLL** in `Assets/Plugins/`:
 
 1. Select the DLL in Unity Inspector
-2. Set **Platform Settings:**
+2. Verify the following in **Platform Settings:**
    - ☑ Windows
    - CPU: **x86_64**
    - ☑ Load on startup
-3. Click **Apply**
-
-For each **Managed DLL** in `Assets/Plugins/`:
-
-1. Select the DLL in Unity Inspector
-2. Set **Platform Settings:**
    - ☑ Any Platform
    - ☑ Validate References
 3. Click **Apply**
@@ -232,13 +227,20 @@ For each **Managed DLL** in `Assets/Plugins/`:
 1. Architecture: **x86_64**
 2. Target Platform: **Windows**
 
-### Step 6: Verify Installation
+---
 
-1. Connect Azure Kinect via USB 3.0
-2. Open the main scene: `Assets/Scenes/MainScene.unity`
-3. Press ▶️ **Play** — Unity will start capturing Kinect data and visualize:
-- ✅ Live 3D Point cloud rendering of the entire scene
-- ✅ Real-time Skeleton (joints and bones) and Per-person Mesh (if person detected)
+## 📐 Multi-Camera Calibration Setup
+This toolkit features an automated workflow for calibrating multiple cameras using tracked skeletal joint data, ensuring all sensors share a common world coordinate system (Camera 1).
+### Workflow:
+1. Identify Base Camera: Camera 1 (Device Index 0) is designated as the world coordinate system origin, and its transformation matrix is always Matrix4x4.identity.
+2. Setup Direct Pairs: In your scene, add a DualCameraCalibrator component for each direct calibration pair required to form a chain to Camera 1 (e.g., Camera 2 to Camera 1, Camera 3 to Camera 2, Camera 4 to Camera 3, etc.).
+3. Static Registration: On Start(), every active DualCameraCalibrator registers its required pair (Source → Target) with the static CalibrationUtility.
+4. Direct Calibration: For each active pair, the user presses the trigger key (C) to collect skeleton data. The system performs Procrustes Analysis (SVD) to calculate the rigid transformation matrix T<sub>Source→Target</sub>.
+5. Automated Transitive Sweep:
+  - The CalibrationUtility saves the direct calibration file (e.g., calib-2-1.txt, calib-3-2.txt).
+  - Crucially, it then checks its static registry: if all required direct calibrations are marked as complete, the system automatically triggers a comprehensive transitive sweep.
+  - The sweep uses the chaining rule (e.g., T<sub>3→1</sub> = T<sub>2→1</sub> * T<sub>3→2</sub>) to compute the final transformation matrix for every camera (S > 1) relative to the base Camera 1.
+6. Result: Final transformation files (e.g., calib-3-1.txt, calib-4-1.txt) are created and saved, ready to be loaded by the KinectDevice components on next scene launch.
 
 ---
 
