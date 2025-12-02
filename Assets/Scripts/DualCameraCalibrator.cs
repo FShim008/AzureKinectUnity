@@ -24,7 +24,15 @@ public class DualCameraCalibrator : MonoBehaviour
     };
     public JointConfidenceLevel minConfidence = JointConfidenceLevel.Medium;
 
-    [Header("Control")]
+    [Header("Filtering Thresholds")]
+    [Tooltip("The ID of the joint to use for movement tracking and filtering.")]
+    public JointType TrackingJoint = JointType.SpineNavel;
+    [Tooltip("Minimum time (in milliseconds) required between adding two successful samples.")]
+    public int TemporalThresholdMs = 100;
+    [Tooltip("Minimum distance (in meters) the tracking joint must move between samples.")]
+    public float MovementThresholdM = 0.1f;
+
+    [Header("Start Calibration Key")]
     public Key startCalibrationKey = Key.C;
 
     private List<Vector3> _sourcePoints = new List<Vector3>();
@@ -37,6 +45,10 @@ public class DualCameraCalibrator : MonoBehaviour
     private int _targetDeviceIndex;
     private int _sourceDeviceIndex;
 
+    private long _lastSampleTimestamp = 0;
+    private Vector3 _lastSampleTrackingPointS = Vector3.zero;
+    private Vector3 _lastSampleTrackingPointT = Vector3.zero;
+
     private void Start()
     {
         if (targetTracker == null || sourceTracker == null)
@@ -45,7 +57,6 @@ public class DualCameraCalibrator : MonoBehaviour
             enabled = false;
             return;
         }
-
         _targetDevice = targetTracker.GetComponent<KinectDevice>();
         _sourceDevice = sourceTracker.GetComponent<KinectDevice>();
         if (_targetDevice == null || _sourceDevice == null)
@@ -54,14 +65,12 @@ public class DualCameraCalibrator : MonoBehaviour
             enabled = false;
             return;
         }
-
         _targetDeviceIndex = _targetDevice.DeviceIndex;
         _sourceDeviceIndex = _sourceDevice.DeviceIndex;
         CalibrationUtility.RegisterRequiredCalibration(
-            _sourceDeviceIndex + 1, // Source Cam Num
-            _targetDeviceIndex + 1  // Target Cam Num
+            _sourceDeviceIndex + 1,
+            _targetDeviceIndex + 1
         );
-
         targetTracker.OnSkeletonsProcessed += OnTargetSkeletonsProcessed;
         sourceTracker.OnSkeletonsProcessed += OnSourceSkeletonsProcessed;
         Debug.Log($"Calibrator ready. Press '{startCalibrationKey.ToString()}' to start data collection for Camera {_sourceDeviceIndex + 1} to Camera {_targetDeviceIndex + 1}.");
@@ -77,7 +86,7 @@ public class DualCameraCalibrator : MonoBehaviour
 
     private void Update()
     {
-        if (Keyboard.current[startCalibrationKey].wasPressedThisFrame && !_isCollecting)
+        if (Keyboard.current != null && Keyboard.current[startCalibrationKey].wasPressedThisFrame && !_isCollecting)
             StartCollection();
     }
 
@@ -87,6 +96,9 @@ public class DualCameraCalibrator : MonoBehaviour
         _targetPoints.Clear();
         _framesCollected = 0;
         _isCollecting = true;
+        _lastSampleTimestamp = 0;
+        _lastSampleTrackingPointS = Vector3.zero;
+        _lastSampleTrackingPointT = Vector3.zero;
         Debug.Log("--- Starting Calibration Data Collection ---");
     }
 
@@ -111,16 +123,22 @@ public class DualCameraCalibrator : MonoBehaviour
             return;
         if (!_latestTargetData.HasValue || !_latestSourceData.HasValue) 
             return;
-
+        
         Skeleton targetSkeleton = _latestTargetData.Value.Skeletons.FirstOrDefault();
         Skeleton sourceSkeleton = _latestSourceData.Value.Skeletons.FirstOrDefault();
-
         if (targetSkeleton.Joints == null || sourceSkeleton.Joints == null) 
             return;
-
+        if (!TryGetTrackingJoints(targetSkeleton, sourceSkeleton, out Vector3 currentPointT, out Vector3 currentPointS))
+            return;
+        long currentTimestamp = _latestSourceData.Value.Timestamp;
+        if (!PassesFilters(currentPointS, currentPointT, currentTimestamp))
+        {
+            _latestTargetData = null;
+            _latestSourceData = null;
+            return;
+        }
         List<Vector3> frameSourcePoints = new List<Vector3>();
         List<Vector3> frameTargetPoints = new List<Vector3>();
-
         foreach (var jointType in calibrationJoints)
         {
             int index = (int)jointType;
@@ -135,22 +153,61 @@ public class DualCameraCalibrator : MonoBehaviour
                 }
             }
         }
-
         if (frameSourcePoints.Count >= 3)
         {
             _sourcePoints.AddRange(frameSourcePoints);
             _targetPoints.AddRange(frameTargetPoints);
             _framesCollected++;
+            Debug.Log($"Sample ADDED. Total Frames Collected: {_framesCollected}/{frameCollectionCount}");
+            _lastSampleTimestamp = currentTimestamp;
+            _lastSampleTrackingPointS = currentPointS;
+            _lastSampleTrackingPointT = currentPointT;
         }
+        else
+            Debug.LogWarning($"Frame skipped: Only found {frameSourcePoints.Count} joints with required confidence.");
 
         if (_framesCollected >= frameCollectionCount)
         {
             PerformCalibration();
             _isCollecting = false;
         }
-
         _latestTargetData = null;
         _latestSourceData = null;
+    }
+
+    private bool TryGetTrackingJoints(Skeleton targetSkeleton, Skeleton sourceSkeleton, out Vector3 pointT, out Vector3 pointS)
+    {
+        pointT = Vector3.zero;
+        pointS = Vector3.zero;
+        int index = (int)TrackingJoint;
+        if (targetSkeleton.Joints.Length > index && sourceSkeleton.Joints.Length > index)
+        {
+            var targetJoint = targetSkeleton.Joints[index];
+            var sourceJoint = sourceSkeleton.Joints[index];
+            if (targetJoint.ConfidenceLevel >= minConfidence && sourceJoint.ConfidenceLevel >= minConfidence)
+            {
+                pointT = targetJoint.Position;
+                pointS = sourceJoint.Position;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private bool PassesFilters(Vector3 currentPointS, Vector3 currentPointT, long currentTimestamp)
+    {
+        // Temporal Threshold Check
+        if (_lastSampleTimestamp != 0 && (currentTimestamp - _lastSampleTimestamp) < TemporalThresholdMs)
+            return false;
+        // Movement Threshold Check
+        if (_lastSampleTrackingPointS != Vector3.zero || _lastSampleTrackingPointT != Vector3.zero)
+        {
+            float movementS = Vector3.Distance(_lastSampleTrackingPointS, currentPointS);
+            float movementT = Vector3.Distance(_lastSampleTrackingPointT, currentPointT);
+            if (movementS < MovementThresholdM || movementT < MovementThresholdM)
+                return false;
+        }
+        return true;
     }
 
     private void PerformCalibration()
@@ -164,6 +221,5 @@ public class DualCameraCalibrator : MonoBehaviour
             CalibrationUtility.MarkCalibrationComplete(sourceNum, targetNum, calibrationMatrix);
         }
         Debug.Log("--- Calibration Finished ---");
-        //Debug.LogWarning("Calibration saved. Transitive check pending for all active calibrators.");
     }
 }

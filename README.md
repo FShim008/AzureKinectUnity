@@ -13,6 +13,7 @@ A comprehensive Unity toolkit for Azure Kinect featuring real-time data capture,
 - [Prerequisites](#-prerequisites)
 - [Setup](#-setup)
 - [Multi-Camera Calibration](#-multi-camera-calibration-setup)
+- [Point Cloud - Entire Scene or Only Person](#-point-cloud)
 - [Future Work](#-future-work)
 
 ---
@@ -22,10 +23,10 @@ A comprehensive Unity toolkit for Azure Kinect featuring real-time data capture,
 - **✨ K4AdotNet Integration**: Leverages the official, high-performance .NET Standard 2.1 wrapper for Azure Kinect.
 - **🔗 Multi-Device Support**: Capable of initializing and running multiple Azure Kinect (or Orbbec Femto Bolt) devices simultaneously.
 - **📐 Automated Multi-Camera Calibration**: Skeleton-based Procrustes analysis and transitive chaining to align all cameras to a single coordinate system (Camera 1).
-- **☁️ 3D Point Cloud**: Full scene reconstruction with color mapping.
 - **🦴 Skeleton Tracking**: Multi-person body tracking with 32 joints per person.
 - **🎨 Skeleton Visualization**: Skeleton visualization with confidence levels.
-- **👤 Person Segmentation**: Individual point clouds and meshes per tracked person.
+- **☁️ 3D Point Cloud (PC)**: Full scene reconstruction with color mapping.
+- **👤 Person PC Segmentation**: Individual point clouds per tracked person.
 - **📊 Performance Monitoring**: Built-in FPS and memory tracking
 
 ---
@@ -235,19 +236,38 @@ This toolkit features an automated workflow for calibrating multiple cameras usi
 1. Identify Base Camera: Camera 1 (Device Index 0) is designated as the world coordinate system origin, and its transformation matrix is always Matrix4x4.identity.
 2. Setup Direct Pairs: In your scene, add a DualCameraCalibrator component for each direct calibration pair required to form a chain to Camera 1 (e.g., Camera 2 to Camera 1, Camera 3 to Camera 2, Camera 4 to Camera 3, etc.).
 3. Static Registration: On Start(), every active DualCameraCalibrator registers its required pair (Source → Target) with the static CalibrationUtility.
-4. Direct Calibration: For each active pair, the user presses the trigger key (C) to collect skeleton data. The system performs Procrustes Analysis (SVD) to calculate the rigid transformation matrix T<sub>Source→Target</sub>.
+4. Direct Calibration: For each active pair, the user presses the trigger key 'C' to collect skeleton data. The system performs Procrustes Analysis (SVD) to calculate the rigid transformation matrix T<sub>Source→Target</sub>.
 5. Automated Transitive Sweep:
   - The CalibrationUtility saves the direct calibration file (e.g., calib-2-1.txt, calib-3-2.txt).
   - Crucially, it then checks its static registry: if all required direct calibrations are marked as complete, the system automatically triggers a comprehensive transitive sweep.
   - The sweep uses the chaining rule (e.g., T<sub>3→1</sub> = T<sub>2→1</sub> * T<sub>3→2</sub>) to compute the final transformation matrix for every camera (S > 1) relative to the base Camera 1.
-6. Result: Final transformation files (e.g., calib-3-1.txt, calib-4-1.txt) are created and saved, ready to be loaded by the KinectDevice components on next scene launch.
+6. Result: Final transformation files (e.g., calib-3-1.txt, calib-4-1.txt) are created and saved, ready to be loaded by the KinectDevice components on next scene launch. We can toggle between the loaded calibration files for all cameras or identity transformation by pressing the key 'L'.
+
+---
+
+## ☁️ Point Cloud - Entire Scene or Only Person
+The `PointCloudGenerator.cs` component has been implemented with a toggle mechanism to switch between two viewing modes for the 3D point cloud: the entire scene or only the tracked person(s). This unified approach keeps the scene clean and resource usage efficient.
+### How to Use the Toggle:
+- **Key Binding:** Press the P key (by default) to switch between modes.
+- **Property:** Control the behavior directly via the `FilterToHumanRegion` boolean property in the `PointCloudGenerator` component.
+### Implementation Overview:
+1. The `PointCloudGenerator` retrieves the *Body Index Map* (an 8-bit image aligning body segmentation data to the depth frame) from the `SkeletonTracker`.
+2. The transformation from the depth camera's view (where the Body Index Map originates) to the color camera's view is handled simultaneously with the depth registration using the comprehensive K4AdotNet function:
+```C#_transformation.DepthImageToColorCameraCustom(
+    depthImage: capture.DepthImage,
+    customImage: bodyIndexMap,
+    transformedDepthImage: _registeredDepthImage,
+    transformedCustomImage: _registeredBodyIndexMap,
+    interpolation: TransformationInterpolation.NearestNeighbor,
+    invalidCustomValue: 255
+);```
+3. When `FilterToHumanRegion` is active, the point generation loop checks the registered *Body Index Map*. Any point corresponding to a pixel with the value 255 (which is the universal background/untracked value) is discarded.
+
 
 ---
 
 ## 🌟 Future Work
-- Add SMPL and RocketBox avatar retargeting
-- Integrate Multiple Azure Kinects
-- Perform Skeleton-based Calibration of multiple Kinects
+- Add Avatar retargeting on the obtained skeleton (SMPL, RocketBox, Mixamo, etc.)
 
 ---
 

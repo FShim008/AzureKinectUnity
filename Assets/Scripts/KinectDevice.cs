@@ -3,6 +3,7 @@ using K4AdotNet.Sensor;
 using System;
 using System.IO;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public class CaptureEventArgs : EventArgs
 {
@@ -24,6 +25,11 @@ public class KinectDevice : MonoBehaviour
     private const ColorResolution TrackingColorResolution = ColorResolution.R720p;
     private const FrameRate TrackingFrameRate = FrameRate.Thirty;
 
+    public Key ToggleCalibrationKey = Key.L;
+    private bool _useCalibration = false;
+    private Matrix4x4 _loadedCalibrationMatrix = Matrix4x4.identity;
+    private bool _hasLoadedCustomMatrix = false;
+
     public event EventHandler<CaptureEventArgs> OnCaptureReady;
 
     private void Start()
@@ -42,7 +48,9 @@ public class KinectDevice : MonoBehaviour
             _device.StartCameras(Configuration);
             IsInitialized = true;
             Debug.Log($"[{gameObject.name}] Device {SerialNumber} opened and cameras started successfully.");
-            LoadTransformationMatrix();
+
+            LoadCustomMatrix();
+            UpdateDeviceTransform();
         }
         else
         {
@@ -51,12 +59,13 @@ public class KinectDevice : MonoBehaviour
         }
     }
 
-    private void LoadTransformationMatrix()
+    private void LoadCustomMatrix()
     {
         int cameraIndex = DeviceIndex + 1;
         if (cameraIndex == 1)
         {
-            DeviceTransform = Matrix4x4.identity;
+            _loadedCalibrationMatrix = Matrix4x4.identity;
+            _hasLoadedCustomMatrix = true;
             Debug.Log($"[{gameObject.name}] Device {DeviceIndex} (Camera 1) uses Identity transform.");
             return;
         }
@@ -64,17 +73,46 @@ public class KinectDevice : MonoBehaviour
         string fileName = $"calib-{cameraIndex}-1.txt";
         string expectedFilePath = Path.Combine(Application.dataPath, "CalibrationFiles", fileName);
         Debug.Log($"Attempting to load calibration for Device {DeviceIndex} from: {expectedFilePath}");
-        
-        DeviceTransform = CalibrationUtility.LoadMatrixFromFile(fileName);
-        if (DeviceTransform != Matrix4x4.identity)
+
+        _loadedCalibrationMatrix = CalibrationUtility.LoadMatrixFromFile(fileName);
+
+        if (_loadedCalibrationMatrix != Matrix4x4.identity)
+        {
+            _hasLoadedCustomMatrix = true;
             Debug.Log($"[{gameObject.name}] Loaded custom transformation matrix. Camera {cameraIndex} is now calibrated to Camera 1.");
+        }
         else
-            Debug.LogWarning($"[{gameObject.name}] Could not load calibration file: {fileName}. Device will use Identity Matrix (uncalibrated).");
+        {
+            _loadedCalibrationMatrix = Matrix4x4.identity;
+            _hasLoadedCustomMatrix = false;
+            Debug.LogWarning($"[{gameObject.name}] Could not load calibration file: {fileName}. Device will use Identity Matrix only.");
+        }
+    }
+
+    private void UpdateDeviceTransform()
+    {
+        if (_useCalibration && _hasLoadedCustomMatrix)
+        {
+            DeviceTransform = _loadedCalibrationMatrix;
+            Debug.Log($"[{gameObject.name}] Transform State: CALIBRATED");
+        }
+        else
+        {
+            DeviceTransform = Matrix4x4.identity;
+            Debug.Log($"[{gameObject.name}] Transform State: IDENTITY (Raw Camera Space)");
+        }
     }
 
     private void Update()
     {
-        if (!IsInitialized || _device == null) 
+        if (!IsInitialized) 
+            return;
+        if (Keyboard.current != null && Keyboard.current[ToggleCalibrationKey].wasPressedThisFrame)
+        {
+            _useCalibration = !_useCalibration;
+            UpdateDeviceTransform();
+        }
+        if (_device == null) 
             return;
         if (_device.TryGetCapture(out var capture))
         {

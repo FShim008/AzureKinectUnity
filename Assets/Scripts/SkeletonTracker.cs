@@ -1,3 +1,4 @@
+using K4AdotNet.Sensor;
 using K4AdotNet.BodyTracking;
 using System;
 using System.Collections;
@@ -24,10 +25,16 @@ public static class GlobalBodyTracking
 
 public class SkeletonTracker : MonoBehaviour
 {
-    [SerializeField] private KinectDevice _deviceComponent;
     private Tracker _tracker;
+    [SerializeField] private KinectDevice _deviceComponent;
     public event EventHandler<SkeletonEventArgs> OnSkeletonsProcessed;
     public bool IsAvailable { get; private set; }
+
+    private BodyFrame _latestBodyFrame;
+    public Image BodyIndexMap
+    {
+        get => _latestBodyFrame?.BodyIndexMap;
+    }
 
     private IEnumerator Start()
     {
@@ -80,6 +87,7 @@ public class SkeletonTracker : MonoBehaviour
         if (_deviceComponent != null)
             _deviceComponent.OnCaptureReady -= EnqueueCaptureForProcessing;
         _tracker?.Dispose();
+        _latestBodyFrame?.Dispose();
     }
 
     private void EnqueueCaptureForProcessing(object sender, CaptureEventArgs e)
@@ -94,12 +102,14 @@ public class SkeletonTracker : MonoBehaviour
 
     private void Update()
     {
-        if (!IsAvailable || _tracker == null) return;
-
+        if (!IsAvailable || _tracker == null) 
+            return;
         if (_tracker.QueueSize > 0)
         {
             if (_tracker.TryPopResult(out var bodyFrame))
             {
+                _latestBodyFrame?.Dispose();
+                _latestBodyFrame = bodyFrame.DuplicateReference();
                 //Debug.Log($"[{gameObject.name}] LOG 3: Tracker result popped (Queue Size: {_tracker.QueueSize})");
                 using (bodyFrame)
                 {
@@ -119,6 +129,8 @@ public class SkeletonTracker : MonoBehaviour
     private SkeletonData ConvertBodyFrameToSkeletonData(BodyFrame bodyFrame)
     {
         Matrix4x4 transformMatrix = _deviceComponent.DeviceTransform;
+        Quaternion transformRotation = transformMatrix.rotation;
+        
         var skeletons = new Skeleton[bodyFrame.BodyCount];
         for (int bodyIndex = 0; bodyIndex < bodyFrame.BodyCount; bodyIndex++)
         {
@@ -131,18 +143,19 @@ public class SkeletonTracker : MonoBehaviour
             for (int j = 0; j < 32; j++)
             {
                 var k4aJoint = k4aSkeleton[j];
-                Vector3 position = new Vector3(k4aJoint.PositionMm.X, -k4aJoint.PositionMm.Y, k4aJoint.PositionMm.Z) * 0.001f;
-                Quaternion orientation = new Quaternion(
+                Vector3 rawPosition = new Vector3(k4aJoint.PositionMm.X, -k4aJoint.PositionMm.Y, k4aJoint.PositionMm.Z) * 0.001f;
+                Quaternion rawOrientation = new Quaternion(
                     k4aJoint.Orientation.X,
                     -k4aJoint.Orientation.Y,
                     -k4aJoint.Orientation.Z,
                     k4aJoint.Orientation.W
                 );
-                orientation = transformMatrix.rotation * orientation;
+                Vector3 finalPosition = transformMatrix.MultiplyPoint(rawPosition);
+                Quaternion finalOrientation = transformRotation * rawOrientation;
                 joints[j] = new JointData
                 {
-                    Position = position,
-                    Orientation = orientation,
+                    Position = finalPosition,
+                    Orientation = finalOrientation,
                     ConfidenceLevel = k4aJoint.ConfidenceLevel
                 };
             }
@@ -155,6 +168,6 @@ public class SkeletonTracker : MonoBehaviour
                 Orientation = transformMatrix.rotation * new Quaternion(rootJoint.Orientation.X, -rootJoint.Orientation.Y, -rootJoint.Orientation.Z, rootJoint.Orientation.W)
             };
         }
-        return new SkeletonData { Skeletons = skeletons };
+        return new SkeletonData { Skeletons = skeletons, Timestamp = bodyFrame.DeviceTimestamp.ValueUsec };
     }
 }
