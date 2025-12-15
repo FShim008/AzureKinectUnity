@@ -256,17 +256,6 @@ MonoBehaviour:
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
   m_Version: 2
---- !u!114 &359455809 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 8842969769447751739, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
-  m_PrefabInstance: {fileID: 401070414}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4c40b7004278ffb4dba5038eb93f31af, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SkeletonTracker
 --- !u!1001 &401070414
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -315,18 +304,6 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 4086910274547175508, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
-      propertyPath: DeviceIndex
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 6350439202815134369, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
-      propertyPath: m_IsActive
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 6974270059180694736, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
-      propertyPath: skeletonTracker
-      value: 
-      objectReference: {fileID: 359455809}
     - target: {fileID: 8108048696613410600, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
       propertyPath: m_Name
       value: Kinect-1
@@ -336,6 +313,85 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+--- !u!1 &406088716
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 406088719}
+  - component: {fileID: 406088718}
+  - component: {fileID: 406088717}
+  m_Layer: 0
+  m_Name: EventSystem
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &406088717
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 406088716}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 01614664b831546d2ae94a42149d80ac, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.InputSystem::UnityEngine.InputSystem.UI.InputSystemUIInputModule
+  m_SendPointerHoverToParent: 1
+  m_MoveRepeatDelay: 0.5
+  m_MoveRepeatRate: 0.1
+  m_XRTrackingOrigin: {fileID: 0}
+  m_ActionsAsset: {fileID: -944628639613478452, guid: ca9f5fa95ffab41fb9a615ab714db018, type: 3}
+  m_PointAction: {fileID: -1654692200621890270, guid: ca9f5fa95ffab41fb9a615ab714db018, type: 3}
+  m_MoveAction: {fileID: -8784545083839296357, guid: ca9f5fa95ffab41fb9a615ab714db018, type: 3}
+  m_SubmitAction: {fileID: 392368643174621059, guid: ca9f5fa95ffab41fb9a615ab714db018, type: 3}
+  m_CancelAction: {fileID: 7727032971491509709, guid: ca9f5fa95ffab41fb9a615ab714db018, type: 3}
+  m_LeftClickAction: {fileID: 3001919216989983466, guid: ca9f5fa95ffab41fb9a615ab714db018, type: 3}
+  m_MiddleClickAction: {fileID: -2185481485913320682, guid: ca9f5fa95ffab41fb9a615ab714db018, type: 3}
+  m_RightClickAction: {fileID: -4090225696740746782, guid: ca9f5fa95ffab41fb9a615ab714db018, type: 3}
+  m_ScrollWheelAction: {fileID: 6240969308177333660, guid: ca9f5fa95ffab41fb9a615ab714db018, type: 3}
+  m_TrackedDevicePositionAction: {fileID: 6564999863303420839, guid: ca9f5fa95ffab41fb9a615ab714db018, type: 3}
+  m_TrackedDeviceOrientationAction: {fileID: 7970375526676320489, guid: ca9f5fa95ffab41fb9a615ab714db018, type: 3}
+  m_DeselectOnBackgroundClick: 1
+  m_PointerBehavior: 0
+  m_CursorLockBehavior: 0
+  m_ScrollDeltaPerTick: 6
+--- !u!114 &406088718
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 406088716}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 76c392e42b5098c458856cdf6ecaaaa1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.EventSystems.EventSystem
+  m_FirstSelected: {fileID: 0}
+  m_sendNavigationEvents: 1
+  m_DragThreshold: 10
+--- !u!4 &406088719
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 406088716}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -507,8 +563,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3acb2063b4033b949ab69bf8fbdf953d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DualCameraCalibrator
-  targetTracker: {fileID: 1486833992}
-  sourceTracker: {fileID: 359455809}
+  targetTracker: {fileID: 1900041347}
+  sourceTracker: {fileID: 862869082}
   frameCollectionCount: 50
   calibrationJoints: 0100000002000000050000000c000000060000000d00000012000000160000001300000017000000
   minConfidence: 2
@@ -565,6 +621,17 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &862869082 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 2463906710951882954, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+  m_PrefabInstance: {fileID: 1486833991}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c40b7004278ffb4dba5038eb93f31af, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SkeletonTracker
 --- !u!1001 &1486833991
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -613,18 +680,6 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 6350439202815134369, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
-      propertyPath: m_IsActive
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 6974270059180694736, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
-      propertyPath: skeletonTracker
-      value: 
-      objectReference: {fileID: 1486833992}
-    - target: {fileID: 6974270059180694736, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
-      propertyPath: FilterToHumanRegion
-      value: 0
-      objectReference: {fileID: 0}
     - target: {fileID: 8108048696613410600, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
       propertyPath: m_Name
       value: Kinect-0
@@ -634,10 +689,10 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
---- !u!114 &1486833992 stripped
+--- !u!114 &1900041347 stripped
 MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 8842969769447751739, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
-  m_PrefabInstance: {fileID: 1486833991}
+  m_CorrespondingSourceObject: {fileID: 2463906710951882954, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+  m_PrefabInstance: {fileID: 401070414}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 0}
   m_Enabled: 1
@@ -655,3 +710,4 @@ SceneRoots:
   - {fileID: 1486833991}
   - {fileID: 401070414}
   - {fileID: 551994655}
+  - {fileID: 406088719}

@@ -38,7 +38,6 @@ public class SkeletonTracker : MonoBehaviour
 
     private IEnumerator Start()
     {
-        _deviceComponent = GetComponent<KinectDevice>();
         if (_deviceComponent == null)
         {
             Debug.LogError($"[{gameObject.name}] Missing required KinectDevice component.");

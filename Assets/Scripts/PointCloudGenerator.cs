@@ -77,8 +77,8 @@ public class PointCloudGenerator : MonoBehaviour, IPointCloudSource
         {
             _transformation = new Transformation(in deviceComponent.calibration);
             var colorResolution = deviceComponent.Configuration.ColorResolution;
-            int width = K4AdotNet.Sensor.ColorResolutions.WidthPixels(colorResolution);
-            int height = K4AdotNet.Sensor.ColorResolutions.HeightPixels(colorResolution);
+            int width = ColorResolutions.WidthPixels(colorResolution);
+            int height = ColorResolutions.HeightPixels(colorResolution);
             _xyzImage = new Image(ImageFormat.Custom, width, height, width * 6);
             _registeredDepthImage = new Image(ImageFormat.Depth16, width, height, width * 2);
             _registeredBodyIndexMap = new Image(ImageFormat.Custom8, width, height, width);
