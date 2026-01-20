@@ -253,14 +253,16 @@ The `PointCloudGenerator.cs` component has been implemented with a toggle mechan
 ### Implementation Overview:
 1. The `PointCloudGenerator` retrieves the *Body Index Map* (an 8-bit image aligning body segmentation data to the depth frame) from the `SkeletonTracker`.
 2. The transformation from the depth camera's view (where the Body Index Map originates) to the color camera's view is handled simultaneously with the depth registration using the comprehensive K4AdotNet function:
-```C#_transformation.DepthImageToColorCameraCustom(
+```
+C#_transformation.DepthImageToColorCameraCustom(
     depthImage: capture.DepthImage,
     customImage: bodyIndexMap,
     transformedDepthImage: _registeredDepthImage,
     transformedCustomImage: _registeredBodyIndexMap,
     interpolation: TransformationInterpolation.NearestNeighbor,
     invalidCustomValue: 255
-);```
+);
+```
 3. When `FilterToHumanRegion` is active, the point generation loop checks the registered *Body Index Map*. Any point corresponding to a pixel with the value 255 (which is the universal background/untracked value) is discarded.
 
 
