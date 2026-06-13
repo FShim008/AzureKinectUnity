@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
@@ -8,184 +8,337 @@ using MathNet.Numerics.LinearAlgebra.Double;
 
 public static class CalibrationUtility
 {
-    private const int BASE_CAMERA_NUM = 1;
+    // If YOU calibrate all cameras directly to BaseCameraNum (recommended), keep this OFF.
+    public static bool EnableTransitiveSweep = false;
+
+    // Base camera number (your Kinect-0 if you use CameraNumber scheme 1..N)
+    public static int BaseCameraNum = 1;
+
+    // Your requested absolute folder
+    public static string CalibrationDirectoryOverride =
+        @"C:\Users\Human Mobility SP1\Documents\GitHub\AzureKinectUnity\Assets\CalibrationFiles";
+
+    public static void SetCalibrationDirectory(string absolutePath)
+    {
+        if (string.IsNullOrWhiteSpace(absolutePath))
+        {
+            Debug.LogWarning("[CalibrationUtility] SetCalibrationDirectory called with empty path. Ignoring.");
+            return;
+        }
+
+        CalibrationDirectoryOverride = absolutePath;
+
+        if (!Directory.Exists(CalibrationDirectoryOverride))
+            Directory.CreateDirectory(CalibrationDirectoryOverride);
+
+        Debug.Log($"[CalibrationUtility] Calibration directory set to: {CalibrationDirectoryOverride}");
+    }
+
+    public static string GetCalibrationDirectory()
+    {
+        if (!string.IsNullOrWhiteSpace(CalibrationDirectoryOverride))
+            return CalibrationDirectoryOverride;
+
+        return Path.Combine(Application.dataPath, "CalibrationFiles");
+    }
+
+    public static string GetCalibrationFileName(int fromCam, int toCam)
+        => $"calib-{fromCam}-{toCam}.txt";
+
+    public static string GetCalibrationFilePath(string fileName)
+        => Path.Combine(GetCalibrationDirectory(), fileName);
+
+    // -------------------- Required-pairs bookkeeping (optional) --------------------
     public class CalibrationPair
     {
         public int SourceNum;
         public int TargetNum;
         public bool IsComplete;
     }
-    private static List<CalibrationPair> _requiredCalibrations = new List<CalibrationPair>();
+
+    private static readonly List<CalibrationPair> _requiredCalibrations = new List<CalibrationPair>();
 
     public static void RegisterRequiredCalibration(int sourceNum, int targetNum)
     {
-        if (sourceNum != targetNum && !_requiredCalibrations.Any(p => p.SourceNum == sourceNum && p.TargetNum == targetNum))
+        if (sourceNum == targetNum) return;
+
+        if (!_requiredCalibrations.Any(p => p.SourceNum == sourceNum && p.TargetNum == targetNum))
         {
-            _requiredCalibrations.Add(new CalibrationPair { SourceNum = sourceNum, TargetNum = targetNum, IsComplete = false });
-            Debug.Log($"[Calibration Utility] Registered required direct calibration: {sourceNum}->{targetNum}. Total required: {_requiredCalibrations.Count}");
+            _requiredCalibrations.Add(new CalibrationPair
+            {
+                SourceNum = sourceNum,
+                TargetNum = targetNum,
+                IsComplete = false
+            });
+
+            Debug.Log($"[CalibrationUtility] Registered required direct calibration: {sourceNum}->{targetNum}. Total required: {_requiredCalibrations.Count}");
         }
     }
 
+    /// <summary>
+    /// Saves source->target AND also saves inverse target->source (if invertible).
+    /// Also updates required-pair tracking and optionally runs sweep (if enabled).
+    /// </summary>
     public static void MarkCalibrationComplete(int sourceNum, int targetNum, Matrix4x4 T_S_to_T)
     {
-        var pair = _requiredCalibrations.FirstOrDefault(p => p.SourceNum == sourceNum && p.TargetNum == targetNum);
-        if (pair != null && !pair.IsComplete)
+        // Save forward
+        string forwardName = GetCalibrationFileName(sourceNum, targetNum);
+        SaveMatrixToFile(T_S_to_T, forwardName);
+
+        // Save inverse (target->source)
+        if (TryInvertMatrix4x4(T_S_to_T, out var inv))
         {
-            pair.IsComplete = true;
-            string directFileName = $"calib-{sourceNum}-{targetNum}.txt";
-            SaveMatrixToFile(T_S_to_T, directFileName);
-            if (_requiredCalibrations.All(p => p.IsComplete))
+            string inverseName = GetCalibrationFileName(targetNum, sourceNum);
+            SaveMatrixToFile(inv, inverseName);
+            Debug.Log($"[CalibrationUtility] Also saved inverse: {inverseName}");
+        }
+        else
+        {
+            Debug.LogWarning("[CalibrationUtility] Could not invert matrix, inverse file not saved.");
+        }
+
+        // Mark required pair complete if it exists
+        var pair = _requiredCalibrations.FirstOrDefault(p => p.SourceNum == sourceNum && p.TargetNum == targetNum);
+        if (pair != null) pair.IsComplete = true;
+
+        if (_requiredCalibrations.Count > 0 && _requiredCalibrations.All(p => p.IsComplete))
+        {
+            Debug.Log("--- ALL REQUIRED DIRECT CALIBRATIONS ARE COMPLETE. ---");
+            if (EnableTransitiveSweep)
             {
-                Debug.Log("--- ALL REQUIRED DIRECT CALIBRATIONS ARE COMPLETE. Triggering Transitive Sweep. ---");
-                ComputeAllFinalTransforms(); // Trigger the full sweep
+                Debug.Log("--- Triggering Transitive Sweep (EnableTransitiveSweep=true) ---");
+                ComputeAllFinalTransforms();
             }
             else
             {
-                int remaining = _requiredCalibrations.Count(p => !p.IsComplete);
-                Debug.Log($"Direct calibration {sourceNum}->{targetNum} completed. {remaining} more direct calibrations needed before sweep.");
+                Debug.Log("--- Transitive Sweep is OFF (EnableTransitiveSweep=false). Skipping. ---");
+                _requiredCalibrations.Clear();
             }
         }
     }
 
+    // -------------------- Load / Save --------------------
+    public static bool TryLoadMatrixFromFile(string fileName, out Matrix4x4 matrix)
+    {
+        string filePath = GetCalibrationFilePath(fileName);
+        matrix = Matrix4x4.identity;
+
+        if (!File.Exists(filePath))
+            return false;
+
+        try
+        {
+            string[] lines = File.ReadAllLines(filePath);
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+
+            for (int i = 0; i < 4; i++)
+            {
+                if (i >= lines.Length) return false;
+
+                string[] values = lines[i].Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (values.Length < 4) return false;
+
+                for (int j = 0; j < 4; j++)
+                {
+                    if (!float.TryParse(values[j], System.Globalization.NumberStyles.Float, culture, out float val))
+                        return false;
+
+                    matrix[i, j] = val;
+                }
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[CalibrationUtility] Error reading calibration file {filePath}: {ex.Message}");
+            return false;
+        }
+    }
+
+    public static Matrix4x4 LoadMatrixFromFile(string fileName)
+    {
+        if (TryLoadMatrixFromFile(fileName, out Matrix4x4 m))
+            return m;
+        return Matrix4x4.identity;
+    }
+
+    public static void SaveMatrixToFile(Matrix4x4 matrix, string fileName)
+    {
+        string directoryPath = GetCalibrationDirectory();
+        if (!Directory.Exists(directoryPath))
+            Directory.CreateDirectory(directoryPath);
+
+        string filePath = Path.Combine(directoryPath, fileName);
+        SaveMatrixToPath(matrix, filePath);
+    }
+
+    public static void SaveMatrixToPath(Matrix4x4 matrix, string fullPath)
+    {
+        try
+        {
+            string dir = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+
+            using (var sw = new StreamWriter(fullPath, false))
+            {
+                for (int i = 0; i < 4; i++)
+                {
+                    sw.WriteLine(
+                        $"{matrix[i, 0].ToString(culture)} {matrix[i, 1].ToString(culture)} {matrix[i, 2].ToString(culture)} {matrix[i, 3].ToString(culture)}"
+                    );
+                }
+            }
+
+            Debug.Log($"[CalibrationUtility] Calibration matrix saved to: {fullPath}");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[CalibrationUtility] Failed saving matrix to {fullPath}: {ex}");
+        }
+    }
+
+    public static bool TryInvertMatrix4x4(Matrix4x4 m, out Matrix4x4 inv)
+    {
+        float det =
+            m.m00 * (m.m11 * m.m22 - m.m12 * m.m21) -
+            m.m01 * (m.m10 * m.m22 - m.m12 * m.m20) +
+            m.m02 * (m.m10 * m.m21 - m.m11 * m.m20);
+
+        if (Mathf.Abs(det) < 1e-8f)
+        {
+            inv = Matrix4x4.identity;
+            return false;
+        }
+
+        inv = m.inverse;
+        return true;
+    }
+
+    // -------------------- Transitive sweep (optional) --------------------
     public static void ComputeAllFinalTransforms()
     {
-        if (!_requiredCalibrations.Any())
+        if (_requiredCalibrations.Count == 0)
         {
-            Debug.LogWarning("Transitive sweep requested, but no required calibrations were registered.");
+            Debug.LogWarning("[CalibrationUtility] Transitive sweep requested, but no required calibrations were registered.");
             return;
         }
+
         int maxCameraNum = _requiredCalibrations.SelectMany(p => new[] { p.SourceNum, p.TargetNum }).Max();
         var directTransforms = LoadAllDirectCalibrations(maxCameraNum);
-        for (int sourceNum = BASE_CAMERA_NUM + 1; sourceNum <= maxCameraNum; sourceNum++)
+
+        for (int sourceNum = 1; sourceNum <= maxCameraNum; sourceNum++)
         {
-            Matrix4x4 T_S_to_1 = TryComputePath(sourceNum, BASE_CAMERA_NUM, directTransforms);
-            if (T_S_to_1 != Matrix4x4.identity)
+            if (sourceNum == BaseCameraNum) continue;
+
+            if (TryComputePath(sourceNum, BaseCameraNum, directTransforms, out Matrix4x4 T_S_to_Base))
             {
-                string finalFileName = $"calib-{sourceNum}-{BASE_CAMERA_NUM}.txt";
-                SaveMatrixToFile(T_S_to_1, finalFileName);
-                Debug.Log($"Transitive calibration T_{sourceNum}->{BASE_CAMERA_NUM} successfully computed and saved: {finalFileName}");
+                string finalFileName = GetCalibrationFileName(sourceNum, BaseCameraNum);
+                SaveMatrixToFile(T_S_to_Base, finalFileName);
+                Debug.Log($"[CalibrationUtility] Transitive calibration computed & saved: {finalFileName}");
             }
             else
-                Debug.LogError($"Failed to find a complete calibration path from Camera {sourceNum} to Camera {BASE_CAMERA_NUM}. Check direct calibrations.");
+            {
+                Debug.LogError($"[CalibrationUtility] Failed to find path from Camera {sourceNum} to Camera {BaseCameraNum}.");
+            }
         }
-        Debug.Log("--- Automated Transitive Calibration Sweep Finished ---");
+
+        Debug.Log("--- [CalibrationUtility] Transitive Calibration Sweep Finished ---");
         _requiredCalibrations.Clear();
     }
 
-    private static Matrix4x4 TryComputePath(int sourceNum, int targetNum, Dictionary<(int, int), Matrix4x4> directTransforms, List<int> visited = null)
+    private static bool TryComputePath(
+        int sourceNum,
+        int targetNum,
+        Dictionary<(int, int), Matrix4x4> directTransforms,
+        out Matrix4x4 result,
+        List<int> visited = null)
     {
-        if (sourceNum == targetNum) 
-            return Matrix4x4.identity;
-        if (visited == null) 
-            visited = new List<int> { sourceNum };
+        if (sourceNum == targetNum)
+        {
+            result = Matrix4x4.identity;
+            return true;
+        }
+
+        visited ??= new List<int> { sourceNum };
+
         if (directTransforms.TryGetValue((sourceNum, targetNum), out Matrix4x4 directMatrix))
-            return directMatrix;
-        var outgoingPaths = directTransforms.Keys
+        {
+            result = directMatrix;
+            return true;
+        }
+
+        var outgoingTargets = directTransforms.Keys
             .Where(k => k.Item1 == sourceNum)
             .Select(k => k.Item2)
             .ToList();
-        foreach (int intermediateNum in outgoingPaths)
+
+        foreach (int intermediate in outgoingTargets)
         {
-            if (visited.Contains(intermediateNum)) 
+            if (visited.Contains(intermediate))
                 continue;
-            Matrix4x4 T_S_to_I = directTransforms[(sourceNum, intermediateNum)];
-            visited.Add(intermediateNum);
-            Matrix4x4 T_I_to_T = TryComputePath(intermediateNum, targetNum, directTransforms, visited);
-            visited.Remove(intermediateNum);
-            if (T_I_to_T != Matrix4x4.identity)
-                return T_I_to_T * T_S_to_I;
+
+            Matrix4x4 T_S_to_I = directTransforms[(sourceNum, intermediate)];
+
+            visited.Add(intermediate);
+            if (TryComputePath(intermediate, targetNum, directTransforms, out Matrix4x4 T_I_to_T, visited))
+            {
+                result = T_I_to_T * T_S_to_I;
+                visited.Remove(intermediate);
+                return true;
+            }
+            visited.Remove(intermediate);
         }
-        return Matrix4x4.identity;
+
+        result = Matrix4x4.identity;
+        return false;
     }
 
     private static Dictionary<(int, int), Matrix4x4> LoadAllDirectCalibrations(int maxCameraNum)
     {
         var transforms = new Dictionary<(int, int), Matrix4x4>();
-        string directoryPath = Path.Combine(Application.dataPath, "CalibrationFiles");
-        if (!Directory.Exists(directoryPath)) 
+        string directoryPath = GetCalibrationDirectory();
+
+        if (!Directory.Exists(directoryPath))
             return transforms;
+
         var files = Directory.GetFiles(directoryPath, "calib-*-*.txt");
-        foreach (var filePath in files)
+
+        foreach (var f in files)
         {
-            string fileName = Path.GetFileName(filePath);
-            string nameWithoutExt = Path.GetFileNameWithoutExtension(filePath);
-            string[] parts = nameWithoutExt.Split('-');
-            if (parts.Length == 3 && int.TryParse(parts[1], out int sourceNum) && int.TryParse(parts[2], out int targetNum))
+            string fileName = Path.GetFileName(f);
+            string nameNoExt = Path.GetFileNameWithoutExtension(fileName);
+            string[] parts = nameNoExt.Split('-'); // calib-S-T
+
+            if (parts.Length == 3 &&
+                int.TryParse(parts[1], out int sourceNum) &&
+                int.TryParse(parts[2], out int targetNum))
             {
                 if (sourceNum <= maxCameraNum && targetNum <= maxCameraNum && sourceNum != targetNum)
                 {
-                    Matrix4x4 matrix = LoadMatrixFromFile(fileName);
-                    if (matrix != Matrix4x4.identity)
-                        transforms.TryAdd((sourceNum, targetNum), matrix);
+                    if (TryLoadMatrixFromFile(fileName, out Matrix4x4 matrix))
+                        transforms[(sourceNum, targetNum)] = matrix;
                 }
             }
         }
+
         return transforms;
     }
 
-    public static Matrix4x4 LoadMatrixFromFile(string fileName)
-    {
-        string directoryPath = Path.Combine(Application.dataPath, "CalibrationFiles");
-        string filePath = Path.Combine(directoryPath, fileName);
-        Matrix4x4 matrix = Matrix4x4.identity;
-        if (!File.Exists(filePath)) 
-            return matrix;
-        try
-        {
-            string[] lines = File.ReadAllLines(filePath);
-            var culture = System.Globalization.CultureInfo.InvariantCulture;
-            for (int i = 0; i < 4; i++)
-            {
-                if (i >= lines.Length) 
-                    break;
-                string[] values = lines[i].Split(new char[] { ' ', '\t' }, System.StringSplitOptions.RemoveEmptyEntries);
-                if (values.Length < 4) 
-                    return Matrix4x4.identity;
-                for (int j = 0; j < 4; j++)
-                {
-                    if (float.TryParse(values[j], System.Globalization.NumberStyles.Float, culture, out float val))
-                        matrix[i, j] = val;
-                    else
-                        return Matrix4x4.identity;
-                }
-            }
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogError($"Error reading calibration file {filePath}: {ex.Message}.");
-            return Matrix4x4.identity;
-        }
-        return matrix;
-    }
-
-    public static void SaveMatrixToFile(Matrix4x4 matrix, string fileName)
-    {
-        string directoryPath = Path.Combine(Application.dataPath, "CalibrationFiles");
-        if (!Directory.Exists(directoryPath))
-            Directory.CreateDirectory(directoryPath);
-        string filePath = Path.Combine(directoryPath, fileName);
-        string content = "";
-        var culture = System.Globalization.CultureInfo.InvariantCulture;
-        for (int i = 0; i < 4; i++)
-        {
-            content += $"{matrix[i, 0].ToString(culture)} {matrix[i, 1].ToString(culture)} {matrix[i, 2].ToString(culture)} {matrix[i, 3].ToString(culture)}";
-            if (i < 3) 
-                content += "\n";
-        }
-        File.WriteAllText(filePath, content);
-        Debug.Log($"Calibration matrix saved to: {filePath}");
-    }
-
+    // -------------------- Rigid transform solver --------------------
     public static Matrix4x4 ComputeTransformationMatrix(List<Vector3> fromPoints, List<Vector3> toPoints)
     {
         if (fromPoints.Count != toPoints.Count || fromPoints.Count < 3)
         {
-            Debug.LogError("Point counts must match and be >= 3 for calibration.");
+            Debug.LogError("[CalibrationUtility] Point counts must match and be >= 3 for calibration.");
             return Matrix4x4.identity;
         }
+
         int N = fromPoints.Count;
-        
-        // 1. Calculate Centroids
+
         Vector3 fromCentroid = Vector3.zero;
         Vector3 toCentroid = Vector3.zero;
         for (int i = 0; i < N; i++)
@@ -196,58 +349,48 @@ public static class CalibrationUtility
         fromCentroid /= N;
         toCentroid /= N;
 
-        // 2. Demean data
-        var fromMatrix = DenseMatrix.OfRowArrays(fromPoints.Select(p => new double[] { p.x, p.y, p.z }).ToArray());
-        var toMatrix = DenseMatrix.OfRowArrays(toPoints.Select(p => new double[] { p.x, p.y, p.z }).ToArray());
+        var X = DenseMatrix.Create(N, 3, 0);
+        var Y = DenseMatrix.Create(N, 3, 0);
         for (int i = 0; i < N; i++)
         {
-            fromMatrix.SetRow(i, new double[] { fromPoints[i].x - fromCentroid.x, fromPoints[i].y - fromCentroid.y, fromPoints[i].z - fromCentroid.z });
-            toMatrix.SetRow(i, new double[] { toPoints[i].x - toCentroid.x, toPoints[i].y - toCentroid.y, toPoints[i].z - toCentroid.z });
+            var fx = fromPoints[i] - fromCentroid;
+            var ty = toPoints[i] - toCentroid;
+            X[i, 0] = fx.x; X[i, 1] = fx.y; X[i, 2] = fx.z;
+            Y[i, 0] = ty.x; Y[i, 1] = ty.y; Y[i, 2] = ty.z;
         }
 
-        // 3. Compute Covariance Matrix H = fromMatrix.T * toMatrix
-        var H = fromMatrix.Transpose() * toMatrix;
-
-        // 4. Perform SVD on H
+        var H = X.Transpose() * Y;
         var svd = H.Svd(true);
         var U = svd.U;
-        var V = svd.VT.Transpose();
+        var VT = svd.VT;
+        var V = VT.Transpose();
 
-        // 5. Calculate Rotation Matrix R = V * U.T
-        var R = V * svd.VT;
+        var R = V * U.Transpose();
 
-        // 6. Reflection correction
-        // If det(R) is -1, it's an improper rotation (reflection). Fix by flipping the sign of the last column of V.
         if (R.Determinant() < 0)
         {
             V.SetColumn(2, V.Column(2).Multiply(-1));
-            R = V * svd.VT;
+            R = V * U.Transpose();
         }
 
-        // 7. Calculate Translation Vector t = toCentroid - R * fromCentroid
-        var rFromCentroid = R * Vector<double>.Build.Dense(new double[] { fromCentroid.x, fromCentroid.y, fromCentroid.z });
+        var fc = Vector<double>.Build.Dense(new double[] { fromCentroid.x, fromCentroid.y, fromCentroid.z });
+        var rc = R * fc;
+
         var t = new Vector3(
-            toCentroid.x - (float)rFromCentroid[0],
-            toCentroid.y - (float)rFromCentroid[1],
-            toCentroid.z - (float)rFromCentroid[2]
+            toCentroid.x - (float)rc[0],
+            toCentroid.y - (float)rc[1],
+            toCentroid.z - (float)rc[2]
         );
 
-        // 8. Form 4x4 Homogeneous Transformation Matrix
-        Matrix4x4 finalMatrix = Matrix4x4.identity;
-        // Rotation part (3x3)
-        for (int i = 0; i < 3; i++)
-        {
-            for (int j = 0; j < 3; j++)
-            {
-                finalMatrix[i, j] = (float)R[i, j];
-            }
-        }
-        // Translation part (4th column)
-        finalMatrix[0, 3] = t.x;
-        finalMatrix[1, 3] = t.y;
-        finalMatrix[2, 3] = t.z;
-        finalMatrix[3, 3] = 1f; // Homogeneous coordinate
+        Matrix4x4 T = Matrix4x4.identity;
+        T[0, 0] = (float)R[0, 0]; T[0, 1] = (float)R[0, 1]; T[0, 2] = (float)R[0, 2];
+        T[1, 0] = (float)R[1, 0]; T[1, 1] = (float)R[1, 1]; T[1, 2] = (float)R[1, 2];
+        T[2, 0] = (float)R[2, 0]; T[2, 1] = (float)R[2, 1]; T[2, 2] = (float)R[2, 2];
 
-        return finalMatrix;
+        T[0, 3] = t.x;
+        T[1, 3] = t.y;
+        T[2, 3] = t.z;
+
+        return T;
     }
 }

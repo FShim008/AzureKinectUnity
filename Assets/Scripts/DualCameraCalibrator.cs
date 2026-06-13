@@ -1,225 +1,337 @@
-using UnityEngine;
+﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using K4AdotNet.BodyTracking;
-using System;
+using UnityEngine;
 using UnityEngine.InputSystem;
-using System.IO;
+using K4AdotNet.BodyTracking;
 
 public class DualCameraCalibrator : MonoBehaviour
 {
-    [Header("Calibration Targets")]
-    public SkeletonTracker targetTracker; // Device Index T (Target)
-    public SkeletonTracker sourceTracker; // Device Index S (Source)
+    [Header("Trackers (assign in Inspector)")]
+    public SkeletonTracker sourceTracker;
+    public SkeletonTracker targetTracker;
 
-    [Header("Calibration Parameters")]
-    public int frameCollectionCount = 100;
+    [Header("Camera Identity")]
+    public int SourceCameraNumber = 2;
+    public int TargetCameraNumber = 1;
 
-    public JointType[] calibrationJoints = new JointType[] {
-        JointType.SpineNavel, JointType.SpineChest,
-        JointType.ShoulderLeft, JointType.ElbowLeft,
-        JointType.ShoulderRight, JointType.ElbowRight,
-        JointType.HipLeft, JointType.KneeLeft,
-        JointType.HipRight, JointType.KneeRight
+    [Header("Calibration Save Location (ABSOLUTE)")]
+    public string CalibrationSaveDirectory =
+        @"C:\Users\Human Mobility SP1\Documents\GitHub\AzureKinectUnity\Assets\CalibrationFiles";
+
+    [Header("Input (Local Hotkey)")]
+    public bool EnableLocalHotkey = true;
+    public Key StartCollectKey = Key.C;
+
+    [Header("Sampling")]
+    public int RequiredSamples = 300;
+    public float SampleIntervalSec = 0.08f;
+
+    [Header("Joint Selection")]
+    public int[] CalibrationJointIndices = new int[]
+    {
+        (int)JointType.Pelvis,
+        (int)JointType.SpineNavel,
+        (int)JointType.SpineChest,
+        (int)JointType.ShoulderLeft,
+        (int)JointType.ShoulderRight,
+        (int)JointType.HipLeft,
+        (int)JointType.HipRight,
     };
-    public JointConfidenceLevel minConfidence = JointConfidenceLevel.Medium;
 
-    [Header("Filtering Thresholds")]
-    [Tooltip("The ID of the joint to use for movement tracking and filtering.")]
-    public JointType TrackingJoint = JointType.SpineNavel;
-    [Tooltip("Minimum time (in milliseconds) required between adding two successful samples.")]
-    public int TemporalThresholdMs = 100;
-    [Tooltip("Minimum distance (in meters) the tracking joint must move between samples.")]
-    public float MovementThresholdM = 0.1f;
+    [Range(0, 2)]
+    public int MinConfidenceInt = 2;
 
-    [Header("Start Calibration Key")]
-    public Key startCalibrationKey = Key.C;
+    [Header("Pairing")]
+    public float MaxTimeDiffMs = 250f;     // ✅ more forgiving for multi-cam
+    public int MaxQueuedFrames = 120;      // ✅ bigger queue to tolerate jitter
 
-    private List<Vector3> _sourcePoints = new List<Vector3>();
-    private List<Vector3> _targetPoints = new List<Vector3>();
-    private int _framesCollected = 0;
+    [Header("Robust Fit")]
+    [Range(0f, 0.4f)]
+    public float OutlierRejectFraction = 0.10f;
+
+    private JointConfidenceLevel MinConfidence =>
+        (JointConfidenceLevel)Mathf.Clamp(MinConfidenceInt, 0, 2);
+
+    private struct Frame
+    {
+        public long timestampUsec;     // ✅ this is HOST time now (from SkeletonTracker)
+        public Skeleton[] skeletons;
+    }
+
+    private readonly Queue<Frame> _sourceQ = new Queue<Frame>(256);
+    private readonly Queue<Frame> _targetQ = new Queue<Frame>(256);
+
+    private readonly List<Vector3> _sourcePoints = new List<Vector3>(4096);
+    private readonly List<Vector3> _targetPoints = new List<Vector3>(4096);
+
     private bool _isCollecting = false;
+    private bool _hasSolved = false;
+    private int _accepted = 0;
+    private double _lastAcceptedHostTime = -999.0;
 
-    private KinectDevice _targetDevice;
-    private KinectDevice _sourceDevice;
-    private int _targetDeviceIndex;
-    private int _sourceDeviceIndex;
-
-    private long _lastSampleTimestamp = 0;
-    private Vector3 _lastSampleTrackingPointS = Vector3.zero;
-    private Vector3 _lastSampleTrackingPointT = Vector3.zero;
+    private int _noMatchSpamLimiter = 0;
 
     private void Start()
     {
-        if (targetTracker == null || sourceTracker == null)
+        CalibrationUtility.SetCalibrationDirectory(CalibrationSaveDirectory);
+
+        if (sourceTracker == null || targetTracker == null)
         {
-            Debug.LogError("Calibration targets are not set. Drag the two SkeletonTracker components here.");
+            Debug.LogError($"[DualCameraCalibrator {SourceCameraNumber}->{TargetCameraNumber}] Missing trackers.");
             enabled = false;
             return;
         }
-        _targetDevice = targetTracker.GetComponent<KinectDevice>();
-        _sourceDevice = sourceTracker.GetComponent<KinectDevice>();
-        if (_targetDevice == null || _sourceDevice == null)
-        {
-            Debug.LogError("Calibration targets must have a KinectDevice component attached to their GameObject.");
-            enabled = false;
-            return;
-        }
-        _targetDeviceIndex = _targetDevice.DeviceIndex;
-        _sourceDeviceIndex = _sourceDevice.DeviceIndex;
-        CalibrationUtility.RegisterRequiredCalibration(
-            _sourceDeviceIndex + 1,
-            _targetDeviceIndex + 1
-        );
-        targetTracker.OnSkeletonsProcessed += OnTargetSkeletonsProcessed;
+
+        CalibrationUtility.RegisterRequiredCalibration(SourceCameraNumber, TargetCameraNumber);
+
         sourceTracker.OnSkeletonsProcessed += OnSourceSkeletonsProcessed;
-        Debug.Log($"Calibrator ready. Press '{startCalibrationKey.ToString()}' to start data collection for Camera {_sourceDeviceIndex + 1} to Camera {_targetDeviceIndex + 1}.");
+        targetTracker.OnSkeletonsProcessed += OnTargetSkeletonsProcessed;
+
+        Debug.Log($"[DualCameraCalibrator {SourceCameraNumber}->{TargetCameraNumber}] Ready. Press '{StartCollectKey}' to start.");
     }
 
     private void OnDestroy()
     {
-        if (targetTracker != null) 
-            targetTracker.OnSkeletonsProcessed -= OnTargetSkeletonsProcessed;
-        if (sourceTracker != null) 
-            sourceTracker.OnSkeletonsProcessed -= OnSourceSkeletonsProcessed;
+        if (sourceTracker != null) sourceTracker.OnSkeletonsProcessed -= OnSourceSkeletonsProcessed;
+        if (targetTracker != null) targetTracker.OnSkeletonsProcessed -= OnTargetSkeletonsProcessed;
+    }
+
+    public void BeginCollect()
+    {
+        _sourcePoints.Clear();
+        _targetPoints.Clear();
+        _accepted = 0;
+
+        _sourceQ.Clear();
+        _targetQ.Clear();
+
+        _isCollecting = true;
+        _hasSolved = false;
+        _lastAcceptedHostTime = -999.0;
+        _noMatchSpamLimiter = 0;
+
+        Debug.Log($"[DualCameraCalibrator {SourceCameraNumber}->{TargetCameraNumber}] START collecting {RequiredSamples} samples. " +
+                  $"MinConfidence={MinConfidence}, MaxTimeDiffMs={MaxTimeDiffMs}, SampleIntervalSec={SampleIntervalSec}, MaxQueuedFrames={MaxQueuedFrames}");
     }
 
     private void Update()
     {
-        if (Keyboard.current != null && Keyboard.current[startCalibrationKey].wasPressedThisFrame && !_isCollecting)
-            StartCollection();
-    }
+        if (EnableLocalHotkey && Keyboard.current != null &&
+            Keyboard.current[StartCollectKey].wasPressedThisFrame)
+        {
+            if (!_isCollecting && !_hasSolved)
+                BeginCollect();
+            else
+                Debug.Log($"[DualCameraCalibrator {SourceCameraNumber}->{TargetCameraNumber}] Already collecting ({_accepted}/{RequiredSamples}).");
+        }
 
-    private void StartCollection()
-    {
-        _sourcePoints.Clear();
-        _targetPoints.Clear();
-        _framesCollected = 0;
-        _isCollecting = true;
-        _lastSampleTimestamp = 0;
-        _lastSampleTrackingPointS = Vector3.zero;
-        _lastSampleTrackingPointT = Vector3.zero;
-        Debug.Log("--- Starting Calibration Data Collection ---");
-    }
-
-    private SkeletonData? _latestTargetData;
-    private SkeletonData? _latestSourceData;
-
-    private void OnTargetSkeletonsProcessed(object sender, SkeletonEventArgs e)
-    {
-        _latestTargetData = e.Skeleton;
-        TryCollectData();
+        if (_isCollecting && !_hasSolved)
+            TryMatchAndCollect();
     }
 
     private void OnSourceSkeletonsProcessed(object sender, SkeletonEventArgs e)
     {
-        _latestSourceData = e.Skeleton;
-        TryCollectData();
+        EnqueueFrame(_sourceQ, e.Skeleton);
     }
 
-    private void TryCollectData()
+    private void OnTargetSkeletonsProcessed(object sender, SkeletonEventArgs e)
     {
-        if (!_isCollecting || _framesCollected >= frameCollectionCount) 
-            return;
-        if (!_latestTargetData.HasValue || !_latestSourceData.HasValue) 
-            return;
-        
-        Skeleton targetSkeleton = _latestTargetData.Value.Skeletons.FirstOrDefault();
-        Skeleton sourceSkeleton = _latestSourceData.Value.Skeletons.FirstOrDefault();
-        if (targetSkeleton.Joints == null || sourceSkeleton.Joints == null) 
-            return;
-        if (!TryGetTrackingJoints(targetSkeleton, sourceSkeleton, out Vector3 currentPointT, out Vector3 currentPointS))
-            return;
-        long currentTimestamp = _latestSourceData.Value.Timestamp;
-        if (!PassesFilters(currentPointS, currentPointT, currentTimestamp))
+        EnqueueFrame(_targetQ, e.Skeleton);
+    }
+
+    private void EnqueueFrame(Queue<Frame> q, SkeletonData? dataOpt)
+    {
+        if (!dataOpt.HasValue) return;
+        var data = dataOpt.Value;
+        if (data.Skeletons == null || data.Skeletons.Length == 0) return;
+
+        // ✅ Timestamp is HOST time now (set in SkeletonTracker)
+        q.Enqueue(new Frame { timestampUsec = data.Timestamp, skeletons = data.Skeletons });
+
+        while (q.Count > Mathf.Max(5, MaxQueuedFrames))
+            q.Dequeue();
+    }
+
+    private void TryMatchAndCollect()
+    {
+        if (_accepted >= RequiredSamples)
         {
-            _latestTargetData = null;
-            _latestSourceData = null;
+            SolveAndSave();
             return;
         }
-        List<Vector3> frameSourcePoints = new List<Vector3>();
-        List<Vector3> frameTargetPoints = new List<Vector3>();
-        foreach (var jointType in calibrationJoints)
+
+        if (_sourceQ.Count == 0 || _targetQ.Count == 0) return;
+
+        // pacing
+        double now = Time.realtimeSinceStartupAsDouble;
+        if (_lastAcceptedHostTime > 0 && (now - _lastAcceptedHostTime) < SampleIntervalSec)
+            return;
+
+        long maxDtUsec = (long)(MaxTimeDiffMs * 1000.0);
+
+        var sArr = _sourceQ.ToArray();
+        var tArr = _targetQ.ToArray();
+
+        bool found = false;
+        long bestAbsDt = long.MaxValue;
+        Frame bestS = default, bestT = default;
+
+        foreach (var s in sArr)
         {
-            int index = (int)jointType;
-            if (targetSkeleton.Joints.Length > index && sourceSkeleton.Joints.Length > index)
+            foreach (var t in tArr)
             {
-                var targetJoint = targetSkeleton.Joints[index];
-                var sourceJoint = sourceSkeleton.Joints[index];
-                if (targetJoint.ConfidenceLevel >= minConfidence && sourceJoint.ConfidenceLevel >= minConfidence)
+                long dt = Math.Abs(s.timestampUsec - t.timestampUsec);
+                if (dt <= maxDtUsec && dt < bestAbsDt)
                 {
-                    frameTargetPoints.Add(targetJoint.Position);
-                    frameSourcePoints.Add(sourceJoint.Position);
+                    bestAbsDt = dt;
+                    bestS = s;
+                    bestT = t;
+                    found = true;
                 }
             }
         }
-        if (frameSourcePoints.Count >= 3)
-        {
-            _sourcePoints.AddRange(frameSourcePoints);
-            _targetPoints.AddRange(frameTargetPoints);
-            _framesCollected++;
-            Debug.Log($"Sample ADDED. Total Frames Collected: {_framesCollected}/{frameCollectionCount}");
-            _lastSampleTimestamp = currentTimestamp;
-            _lastSampleTrackingPointS = currentPointS;
-            _lastSampleTrackingPointT = currentPointT;
-        }
-        else
-            Debug.LogWarning($"Frame skipped: Only found {frameSourcePoints.Count} joints with required confidence.");
 
-        if (_framesCollected >= frameCollectionCount)
+        if (!found)
         {
-            PerformCalibration();
-            _isCollecting = false;
+            // Debug: show head delta occasionally
+            if ((_noMatchSpamLimiter++ % 60) == 0)
+            {
+                long headDtMs = Math.Abs(_sourceQ.Peek().timestampUsec - _targetQ.Peek().timestampUsec) / 1000;
+                Debug.LogWarning($"[DualCameraCalibrator {SourceCameraNumber}->{TargetCameraNumber}] No match. " +
+                                 $"Head dt={headDtMs}ms, Qsrc={_sourceQ.Count}, Qtgt={_targetQ.Count}. " +
+                                 $"Try increasing MaxTimeDiffMs (current {MaxTimeDiffMs}).");
+            }
+
+            if (_sourceQ.Peek().timestampUsec < _targetQ.Peek().timestampUsec) _sourceQ.Dequeue();
+            else _targetQ.Dequeue();
+            return;
         }
-        _latestTargetData = null;
-        _latestSourceData = null;
+
+        while (_sourceQ.Count > 0 && _sourceQ.Peek().timestampUsec < bestS.timestampUsec) _sourceQ.Dequeue();
+        while (_targetQ.Count > 0 && _targetQ.Peek().timestampUsec < bestT.timestampUsec) _targetQ.Dequeue();
+
+        if (_sourceQ.Count == 0 || _targetQ.Count == 0) return;
+
+        var sFrame = _sourceQ.Dequeue();
+        var tFrame = _targetQ.Dequeue();
+
+        if (!TrySelectBestSkeleton(sFrame.skeletons, out var sSkel)) return;
+        if (!TrySelectBestSkeleton(tFrame.skeletons, out var tSkel)) return;
+
+        if (!TryBuildAveragedFramePoints(sSkel, tSkel, out var avgS, out var avgT))
+            return;
+
+        _sourcePoints.Add(avgS);
+        _targetPoints.Add(avgT);
+        _accepted++;
+        _lastAcceptedHostTime = now;
+
+        if (_accepted == 1 || _accepted % 25 == 0)
+            Debug.Log($"[DualCameraCalibrator {SourceCameraNumber}->{TargetCameraNumber}] Sample ADDED {_accepted}/{RequiredSamples} (bestDt={bestAbsDt / 1000}ms)");
+
+        if (_accepted >= RequiredSamples)
+            SolveAndSave();
     }
 
-    private bool TryGetTrackingJoints(Skeleton targetSkeleton, Skeleton sourceSkeleton, out Vector3 pointT, out Vector3 pointS)
+    private bool TrySelectBestSkeleton(Skeleton[] skeletons, out Skeleton best)
     {
-        pointT = Vector3.zero;
-        pointS = Vector3.zero;
-        int index = (int)TrackingJoint;
-        if (targetSkeleton.Joints.Length > index && sourceSkeleton.Joints.Length > index)
+        best = default;
+        int idx = (int)JointType.SpineNavel;
+
+        bool found = false;
+        float bestScore = -1;
+
+        foreach (var sk in skeletons)
         {
-            var targetJoint = targetSkeleton.Joints[index];
-            var sourceJoint = sourceSkeleton.Joints[index];
-            if (targetJoint.ConfidenceLevel >= minConfidence && sourceJoint.ConfidenceLevel >= minConfidence)
+            if (sk.Joints == null || sk.Joints.Length <= idx) continue;
+
+            var j = sk.Joints[idx];
+            if (j.ConfidenceLevel < MinConfidence) continue;
+
+            float score = (float)j.ConfidenceLevel;
+            if (!found || score > bestScore)
             {
-                pointT = targetJoint.Position;
-                pointS = sourceJoint.Position;
-                return true;
+                best = sk;
+                bestScore = score;
+                found = true;
             }
         }
-        return false;
+        return found;
     }
 
-    private bool PassesFilters(Vector3 currentPointS, Vector3 currentPointT, long currentTimestamp)
+    private bool TryBuildAveragedFramePoints(Skeleton s, Skeleton t, out Vector3 avgS, out Vector3 avgT)
     {
-        // Temporal Threshold Check
-        if (_lastSampleTimestamp != 0 && (currentTimestamp - _lastSampleTimestamp) < TemporalThresholdMs)
-            return false;
-        // Movement Threshold Check
-        if (_lastSampleTrackingPointS != Vector3.zero || _lastSampleTrackingPointT != Vector3.zero)
+        avgS = Vector3.zero;
+        avgT = Vector3.zero;
+        int used = 0;
+
+        foreach (int ji in CalibrationJointIndices)
         {
-            float movementS = Vector3.Distance(_lastSampleTrackingPointS, currentPointS);
-            float movementT = Vector3.Distance(_lastSampleTrackingPointT, currentPointT);
-            if (movementS < MovementThresholdM || movementT < MovementThresholdM)
-                return false;
+            if (s.Joints == null || t.Joints == null) return false;
+            if (ji < 0 || ji >= 32) continue;
+
+            var sj = s.Joints[ji];
+            var tj = t.Joints[ji];
+
+            if (sj.ConfidenceLevel < MinConfidence || tj.ConfidenceLevel < MinConfidence)
+                continue;
+
+            avgS += sj.Position;
+            avgT += tj.Position;
+            used++;
         }
+
+        if (used < 3) return false;
+        avgS /= used;
+        avgT /= used;
         return true;
     }
 
-    private void PerformCalibration()
+    private void SolveAndSave()
     {
-        Debug.Log("--- Calibration Started ---");
-        Matrix4x4 calibrationMatrix = CalibrationUtility.ComputeTransformationMatrix(_sourcePoints, _targetPoints);
-        if (calibrationMatrix != Matrix4x4.identity)
+        if (_hasSolved) return;
+        if (_sourcePoints.Count < 3 || _targetPoints.Count < 3)
         {
-            int sourceNum = _sourceDeviceIndex + 1;
-            int targetNum = _targetDeviceIndex + 1;
-            CalibrationUtility.MarkCalibrationComplete(sourceNum, targetNum, calibrationMatrix);
+            Debug.LogWarning($"[DualCameraCalibrator {SourceCameraNumber}->{TargetCameraNumber}] Not enough points to solve.");
+            return;
         }
-        Debug.Log("--- Calibration Finished ---");
+
+        _hasSolved = true;
+        _isCollecting = false;
+
+        Debug.Log($"[DualCameraCalibrator {SourceCameraNumber}->{TargetCameraNumber}] Collected {_accepted}. Solving...");
+
+        Matrix4x4 M = CalibrationUtility.ComputeTransformationMatrix(_sourcePoints, _targetPoints);
+
+        if (OutlierRejectFraction > 0f && OutlierRejectFraction < 0.4f && _sourcePoints.Count >= 10)
+        {
+            int n = _sourcePoints.Count;
+            var residuals = new List<(float err, int idx)>(n);
+
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 p = M.MultiplyPoint3x4(_sourcePoints[i]);
+                float e = (p - _targetPoints[i]).sqrMagnitude;
+                residuals.Add((e, i));
+            }
+
+            residuals.Sort((a, b) => a.err.CompareTo(b.err));
+            int keep = Mathf.Max(3, Mathf.RoundToInt(n * (1f - OutlierRejectFraction)));
+
+            var newS = new List<Vector3>(keep);
+            var newT = new List<Vector3>(keep);
+            for (int k = 0; k < keep; k++)
+            {
+                int idx = residuals[k].idx;
+                newS.Add(_sourcePoints[idx]);
+                newT.Add(_targetPoints[idx]);
+            }
+
+            M = CalibrationUtility.ComputeTransformationMatrix(newS, newT);
+        }
+
+        CalibrationUtility.MarkCalibrationComplete(SourceCameraNumber, TargetCameraNumber, M);
+
+        Debug.Log($"[DualCameraCalibrator {SourceCameraNumber}->{TargetCameraNumber}] --- Saved calib-{SourceCameraNumber}-{TargetCameraNumber}.txt ---");
     }
 }

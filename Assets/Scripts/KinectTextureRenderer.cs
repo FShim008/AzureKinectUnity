@@ -75,6 +75,8 @@ public class KinectTextureRenderer : MonoBehaviour
 
     private void OnCaptureReady(object sender, CaptureEventArgs e)
     {
+        if (e?.Capture == null) return;
+
         using (var capture = e.Capture.DuplicateReference())
         {
             RenderColorImage(capture.ColorImage);

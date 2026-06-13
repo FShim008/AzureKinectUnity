@@ -119,6 +119,78 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1001 &137020649
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4086910274547175508, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: DeviceIndex
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 8108048696613410600, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_Name
+      value: Kinect-3
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+--- !u!114 &205512696 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 2463906710951882954, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+  m_PrefabInstance: {fileID: 1526551193}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c40b7004278ffb4dba5038eb93f31af, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SkeletonTracker
 --- !u!1 &330585543
 GameObject:
   m_ObjectHideFlags: 0
@@ -303,6 +375,10 @@ PrefabInstance:
     - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4086910274547175508, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: DeviceIndex
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 8108048696613410600, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
       propertyPath: m_Name
@@ -529,6 +605,10 @@ GameObject:
   m_Component:
   - component: {fileID: 551994655}
   - component: {fileID: 551994656}
+  - component: {fileID: 551994659}
+  - component: {fileID: 551994658}
+  - component: {fileID: 551994657}
+  - component: {fileID: 551994660}
   m_Layer: 0
   m_Name: Calibrator
   m_TagString: Untagged
@@ -563,10 +643,94 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3acb2063b4033b949ab69bf8fbdf953d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DualCameraCalibrator
-  targetTracker: {fileID: 1900041347}
-  sourceTracker: {fileID: 862869082}
+  targetTracker: {fileID: 862869082}
+  sourceTracker: {fileID: 1900041347}
   frameCollectionCount: 50
   calibrationJoints: 0100000002000000050000000c000000060000000d00000012000000160000001300000017000000
+  minConfidence: 2
+  TrackingJoint: 1
+  TemporalThresholdMs: 100
+  MovementThresholdM: 0.1
+  startCalibrationKey: 17
+--- !u!114 &551994657
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 551994654}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3acb2063b4033b949ab69bf8fbdf953d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DualCameraCalibrator
+  targetTracker: {fileID: 1968454450}
+  sourceTracker: {fileID: 1360778457}
+  frameCollectionCount: 100
+  calibrationJoints: 010000000200000005000000060000000c0000000d00000012000000130000001600000017000000
+  minConfidence: 2
+  TrackingJoint: 1
+  TemporalThresholdMs: 100
+  MovementThresholdM: 0.1
+  startCalibrationKey: 17
+--- !u!114 &551994658
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 551994654}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3acb2063b4033b949ab69bf8fbdf953d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DualCameraCalibrator
+  targetTracker: {fileID: 205512696}
+  sourceTracker: {fileID: 1968454450}
+  frameCollectionCount: 100
+  calibrationJoints: 010000000200000005000000060000000c0000000d00000012000000130000001600000017000000
+  minConfidence: 2
+  TrackingJoint: 1
+  TemporalThresholdMs: 100
+  MovementThresholdM: 0.1
+  startCalibrationKey: 17
+--- !u!114 &551994659
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 551994654}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3acb2063b4033b949ab69bf8fbdf953d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DualCameraCalibrator
+  targetTracker: {fileID: 1900041347}
+  sourceTracker: {fileID: 205512696}
+  frameCollectionCount: 100
+  calibrationJoints: 010000000200000005000000060000000c0000000d00000012000000130000001600000017000000
+  minConfidence: 2
+  TrackingJoint: 1
+  TemporalThresholdMs: 100
+  MovementThresholdM: 0.1
+  startCalibrationKey: 17
+--- !u!114 &551994660
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 551994654}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3acb2063b4033b949ab69bf8fbdf953d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DualCameraCalibrator
+  targetTracker: {fileID: 1360778457}
+  sourceTracker: {fileID: 862869082}
+  frameCollectionCount: 100
+  calibrationJoints: 010000000200000005000000060000000c0000000d00000012000000130000001600000017000000
   minConfidence: 2
   TrackingJoint: 1
   TemporalThresholdMs: 100
@@ -632,6 +796,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4c40b7004278ffb4dba5038eb93f31af, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SkeletonTracker
+--- !u!114 &1360778457 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 2463906710951882954, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+  m_PrefabInstance: {fileID: 2142736962}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c40b7004278ffb4dba5038eb93f31af, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SkeletonTracker
 --- !u!1001 &1486833991
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -689,6 +864,67 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+--- !u!1001 &1526551193
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4086910274547175508, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: DeviceIndex
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 8108048696613410600, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_Name
+      value: Kinect-2
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
 --- !u!114 &1900041347 stripped
 MonoBehaviour:
   m_CorrespondingSourceObject: {fileID: 2463906710951882954, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
@@ -700,6 +936,78 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4c40b7004278ffb4dba5038eb93f31af, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SkeletonTracker
+--- !u!114 &1968454450 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 2463906710951882954, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+  m_PrefabInstance: {fileID: 137020649}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4c40b7004278ffb4dba5038eb93f31af, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SkeletonTracker
+--- !u!1001 &2142736962
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 0}
+    m_Modifications:
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3423395543583600580, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 4086910274547175508, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: DeviceIndex
+      value: 4
+      objectReference: {fileID: 0}
+    - target: {fileID: 8108048696613410600, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
+      propertyPath: m_Name
+      value: Kinect-4
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 5637dc7c865c6394ab033bbb3c53e1c1, type: 3}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -709,5 +1017,8 @@ SceneRoots:
   - {fileID: 832575519}
   - {fileID: 1486833991}
   - {fileID: 401070414}
+  - {fileID: 1526551193}
+  - {fileID: 137020649}
+  - {fileID: 2142736962}
   - {fileID: 551994655}
   - {fileID: 406088719}

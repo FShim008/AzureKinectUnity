@@ -1,16 +1,15 @@
-using UnityEngine;
-using System.Collections.Generic;
-using System;
+﻿using UnityEngine;
 using UnityEngine.Rendering;
 
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
 public class PointCloudRenderer : MonoBehaviour
 {
-    [SerializeField] private PointCloudGenerator pointCloudSource;
+    [SerializeField] private MonoBehaviour pointCloudSourceBehaviour; // must implement IPointCloudSource
+    private IPointCloudSource _source;
 
     [Header("Rendering")]
-    [Tooltip("Custom shader required for rendering points.")]
     public Shader pointCloudShader;
+    public bool TreatInputAsWorldSpace = true;
 
     private MeshFilter meshFilter;
     private MeshRenderer meshRenderer;
@@ -27,49 +26,72 @@ public class PointCloudRenderer : MonoBehaviour
         SetupMeshAndMaterial();
     }
 
-    private void Start()
+    private void OnEnable() => BindSource();
+    private void OnDisable() => UnbindSource();
+
+    private void BindSource()
     {
-        if (pointCloudSource == null)
+        if (pointCloudSourceBehaviour == null)
         {
-            pointCloudSource = GetComponent<PointCloudGenerator>();
-            if (pointCloudSource == null)
-            {
-                Debug.LogError($"[{gameObject.name}] Missing required {nameof(PointCloudGenerator)} component. Cannot render.");
-                enabled = false;
-                return;
-            }
+            Debug.LogError($"[{gameObject.name}] pointCloudSourceBehaviour is NULL. Drag PointCloudFusionSource (or generator) here.");
+            enabled = false;
+            return;
         }
-        pointCloudSource.OnPointCloudGenerated += RenderPointCloud;
+
+        _source = pointCloudSourceBehaviour as IPointCloudSource;
+        if (_source == null)
+        {
+            Debug.LogError($"[{gameObject.name}] Assigned source '{pointCloudSourceBehaviour.name}' does NOT implement IPointCloudSource.");
+            enabled = false;
+            return;
+        }
+
+        _source.OnPointCloudGenerated -= RenderPointCloud;
+        _source.OnPointCloudGenerated += RenderPointCloud;
+
+        Debug.Log($"[PCR] Bound renderer '{name}' to source '{pointCloudSourceBehaviour.name}' (TreatInputAsWorldSpace={TreatInputAsWorldSpace})");
+    }
+
+    private void UnbindSource()
+    {
+        if (_source != null)
+        {
+            _source.OnPointCloudGenerated -= RenderPointCloud;
+            _source = null;
+        }
     }
 
     private void SetupMeshAndMaterial()
     {
         if (pointCloudShader == null)
-        {
-            pointCloudShader = Shader.Find("Custom/PointCloudShader");
-            if (pointCloudShader == null)
-            {
-                Debug.LogError($"[{gameObject.name}] Point Cloud Shader 'Custom/PointCloudShader' not found.");
-                enabled = false;
-                return;
-            }
-        }
-        Material mat = new Material(pointCloudShader);
-        mat.SetInt("_ColorMode", 1);
-        mat.enableInstancing = true;
-        meshRenderer.material = mat;
+            pointCloudShader = Shader.Find("Custom/PointCloudPointsOnly");
 
-        pointMesh = new Mesh();
+        if (pointCloudShader == null)
+        {
+            Debug.LogError($"[{gameObject.name}] Shader not found. Assign pointCloudShader in Inspector.");
+            enabled = false;
+            return;
+        }
+
+        var mat = new Material(pointCloudShader);
+        mat.enableInstancing = true;
+        meshRenderer.sharedMaterial = mat;
+
+        pointMesh = new Mesh { name = $"{gameObject.name}_PointMesh" };
         pointMesh.indexFormat = IndexFormat.UInt32;
         pointMesh.MarkDynamic();
-        meshFilter.mesh = pointMesh;
+        meshFilter.sharedMesh = pointMesh;
     }
 
-    private void RenderPointCloud(PointCloudData pointCloud)
+    private void RenderPointCloud(PointCloudData pc)
     {
-        if (pointCloud.Count == 0)
-            return;
-        int count = pointCloud.Count;
+        // ✅ FIX: PointCloudData is likely a struct, so pc==null is invalid
+        if (pc.Points == null || pc.Colors == null) return;
+        if (pc.Count <= 0) return;
+
+        int count = Mathf.Min(pc.Count, Mathf.Min(pc.Points.Count, pc.Colors.Count));
+        if (count <= 0) return;
+
         if (vertexArray == null || vertexArray.Length < count)
         {
             int newSize = Mathf.NextPowerOfTwo(count);
@@ -78,11 +100,24 @@ public class PointCloudRenderer : MonoBehaviour
             indexArray = new int[newSize];
             Debug.Log($"[{gameObject.name}] Resized render arrays capacity to {newSize}.");
         }
-        pointCloud.Points.CopyTo(vertexArray, 0);
-        pointCloud.Colors.CopyTo(colorArray, 0);
+
+        for (int i = 0; i < count; i++)
+        {
+            vertexArray[i] = pc.Points[i];
+            colorArray[i] = pc.Colors[i];
+        }
+
+        if (TreatInputAsWorldSpace)
+        {
+            for (int i = 0; i < count; i++)
+                vertexArray[i] = transform.InverseTransformPoint(vertexArray[i]);
+        }
+
         for (int i = 0; i < count; i++)
             indexArray[i] = i;
-        pointMesh.Clear();
+
+        pointMesh.Clear(false);
+        pointMesh.subMeshCount = 1;
         pointMesh.SetVertices(vertexArray, 0, count);
         pointMesh.SetColors(colorArray, 0, count);
         pointMesh.SetIndices(indexArray, 0, count, MeshTopology.Points, 0, false);
@@ -91,7 +126,11 @@ public class PointCloudRenderer : MonoBehaviour
 
     private void OnDestroy()
     {
-        if (pointCloudSource != null)
-            pointCloudSource.OnPointCloudGenerated -= RenderPointCloud;
+        UnbindSource();
+        if (pointMesh != null)
+        {
+            Destroy(pointMesh);
+            pointMesh = null;
+        }
     }
 }
