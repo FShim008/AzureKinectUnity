@@ -247,36 +247,103 @@ public class KinectDevice : MonoBehaviour
         // ---------------------------------------------------
 
         // Capture dispatch (safe with multiple subscribers)
-        if (_device.TryGetCapture(out var capture))
+        Capture capture = null;
+        try
         {
-            try
+            if (!_device.TryGetCapture(out capture))
+                return;
+        }
+        catch (Exception ex)
+        {
+            NoteSkippedBadFrame(ex.Message);
+            return;
+        }
+
+        // Bad-frame guard: only DROP captures whose depth image is PRESENT but
+        // structurally corrupt (zero dimensions / null buffer) — that is the
+        // shape that crashes native body tracking (k4abt) and
+        // DepthImageToPointCloud. A capture with NO depth image this tick (e.g.
+        // a color-only delivery) is normal: let it flow and the downstream
+        // null-checks skip it quietly, exactly as before the guard existed.
+        if (IsCaptureDepthCorrupt(capture, out var badReason))
+        {
+            try { capture.Dispose(); } catch { }
+            NoteSkippedBadFrame(badReason);
+            return;
+        }
+
+        try
+        {
+            var handlers = OnCaptureReady;
+            if (handlers != null)
             {
-                var handlers = OnCaptureReady;
-                if (handlers != null)
+                foreach (EventHandler<CaptureEventArgs> h in handlers.GetInvocationList())
                 {
-                    foreach (EventHandler<CaptureEventArgs> h in handlers.GetInvocationList())
+                    Capture perHandler = null;
+                    try
                     {
-                        Capture perHandler = null;
-                        try
-                        {
-                            perHandler = capture.DuplicateReference();
-                            h(this, new CaptureEventArgs(perHandler));
-                        }
-                        catch (Exception ex)
-                        {
-                            Debug.LogError($"[{gameObject.name}] OnCaptureReady handler error: {ex}");
-                        }
-                        finally
-                        {
-                            try { perHandler?.Dispose(); } catch { }
-                        }
+                        perHandler = capture.DuplicateReference();
+                        h(this, new CaptureEventArgs(perHandler));
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[{gameObject.name}] OnCaptureReady handler error: {ex}");
+                    }
+                    finally
+                    {
+                        try { perHandler?.Dispose(); } catch { }
                     }
                 }
             }
-            finally
-            {
-                try { capture.Dispose(); } catch { }
-            }
+        }
+        finally
+        {
+            try { capture.Dispose(); } catch { }
+        }
+    }
+
+    // ---------- Bad depth-frame guard ----------
+    private int _badDepthTotal = 0;
+    private int _badDepthSinceLog = 0;
+    private float _lastBadDepthLogTime = -999f;
+
+    // Returns true ONLY for a capture whose depth image is present but
+    // structurally unusable (non-positive dimensions or null buffer) — the
+    // shape that crashes native code. Null depth is deliberately NOT treated as
+    // corrupt: downstream consumers already skip null depth safely, so letting
+    // it pass avoids false alarms on normal color-only captures.
+    private static bool IsCaptureDepthCorrupt(Capture capture, out string reason)
+    {
+        reason = null;
+        if (capture == null) { reason = "null capture"; return true; }
+
+        var depth = capture.DepthImage;
+        if (depth == null) return false; // no depth this tick — normal, handled downstream
+
+        int w = depth.WidthPixels;
+        int h = depth.HeightPixels;
+        if (w <= 0 || h <= 0) { reason = $"bad depth dimensions {w}x{h}"; return true; }
+        if (depth.Buffer == System.IntPtr.Zero) { reason = "null depth buffer"; return true; }
+
+        return false;
+    }
+
+    private void NoteSkippedBadFrame(string reason)
+    {
+        _badDepthTotal++;
+        _badDepthSinceLog++;
+
+        // Throttle to one line every 2s so a continuously bad camera can't
+        // flood the console.
+        float now = Time.realtimeSinceStartup;
+        if (now - _lastBadDepthLogTime >= 2f)
+        {
+            Debug.LogWarning(
+                $"[{gameObject.name}] Skipped {_badDepthSinceLog} bad depth frame(s) " +
+                $"(total {_badDepthTotal}; last: {reason}). " +
+                $"Camera/USB/power may be unstable — check Orbbec Viewer.");
+            _lastBadDepthLogTime = now;
+            _badDepthSinceLog = 0;
         }
     }
 
